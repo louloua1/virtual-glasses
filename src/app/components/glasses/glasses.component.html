@@ -1,0 +1,94 @@
+
+<div class="container-fluid">
+    <div class="row">
+      <div class="col-md-3">
+        <app-side-bar></app-side-bar>
+      </div>
+      <div class="col-md-9">
+        <ng-container *ngIf="lunettes ; else failureOrLoading">
+        <div class="row">
+          <div class="col-md-4 mb-4" *ngFor="let glass of lunettes">
+            <div class="card h-100 shadow-sm">
+              <img [src]="glass.imageUrl" class="card-img-top" alt="{{ glass.nom }}" style="height: 200px; object-fit: cover;">
+              <div class="card-body d-flex flex-column">
+                <h5 class="card-title">{{ glass.nom }}</h5>
+                <p class="card-text text-primary fw-bold">{{ glass.prix | currency:'USD':'symbol' }}</p>
+                
+                <div class="mb-3">
+                  <button type="button" class="btn btn-outline-danger" (click)="toggleLike(glass)">
+                    <i class="bi" [ngClass]="{'bi-heart-fill': glass.liked, 'bi-heart': !glass.liked}"></i>
+                  </button>
+                </div>
+                <div class="mt-auto d-flex justify-content-between">
+                  <button class="btn btn-success" (click)="tryGlasses(glass)">Essayer</button>
+                  <button class="btn btn-primary" (click)="viewDetails(glass)">Voir détail</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+    </ng-container>
+      </div>
+    </div>
+</div>
+<div *ngIf="showVirtualTryOn" class="virtual-glasses-modal">
+  <div class="modal-backdrop" (click)="showVirtualTryOn = false"></div>
+  <div class="modal-content">
+    <app-virtual-glasses
+  [glass]="selectedGlass"
+  [showGlassList]="false"
+  [glassesList]="lunettes"
+  (close)="showVirtualTryOn = false">
+</app-virtual-glasses>
+
+<button 
+class="close-btn" 
+(click)="showVirtualTryOn = false"
+style="
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+"
+>
+×
+</button>
+  </div>
+</div>
+<nav *ngIf="totalPages > 1" class="mt-3">
+    <ul class="pagination justify-content-center">
+  <li class="page-item" [class.disabled]="currentPage === 0">
+    <button class="page-link" (click)="goToPage(currentPage - 1)">Précédent</button>
+  </li>
+
+  <li
+    class="page-item"
+    *ngFor="let page of [].constructor(totalPages); let i = index"
+    [class.active]="i === currentPage"
+  >
+    <button class="page-link" (click)="goToPage(i)">{{ i + 1 }}</button>
+  </li>
+
+  <li class="page-item" [class.disabled]="currentPage >= totalPages - 1">
+    <button class="page-link" (click)="goToPage(currentPage + 1)">Suivant</button>
+  </li>
+</ul>
+
+  </nav>
+  
+  
+
+  <ng-template #failureOrLoading>
+    <div class="alert alert-danger" role="alert">
+      {{ errorMessage }}
+    </div>
+  </ng-template>  

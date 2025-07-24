@@ -1,0 +1,77 @@
+    <div class="tryon-full-image" id="top-image">
+    <div class="tryon-overlay">
+      <h1>Essayer en temps réel ?</h1>
+      <button (click)="scrollToSection()">Cliquer ici et c'est parti !</button>
+    </div>
+  </div>
+  <!-- Le reste de ta page ici -->
+  <div class="container py-5 tryon-cards-section" id="cards-section">
+    <div class="row mb-5 text-center">
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm">
+          <div class="card-body">
+            <span class="badge bg-primary rounded-pill mb-2">1</span>
+            <h5 class="card-title">Choisir le modèle</h5>
+            <p class="card-text">Choisir votre modèle depuis la liste.</p>
+          </div>
+        </div>
+      </div>
+  
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm">
+          <div class="card-body">
+            <span class="badge bg-primary rounded-pill mb-2">2</span>
+            <h5 class="card-title">Cliquer sur essayer</h5>
+            <p class="card-text">Cliquer sur essayer pour débuter l'expérience.</p>
+          </div>
+        </div>
+      </div>
+  
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm">
+          <div class="card-body">
+            <span class="badge bg-primary rounded-pill mb-2">3</span>
+            <h5 class="card-title">Allouer votre caméra, et Enfin !</h5>
+            <p class="card-text">Ouvrir la caméra de l'appareil pour faire l'expérience.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tryon-full-image second-bg">
+    <div class="tryon-overlay">
+      <h1 class="fw-bold mb-4">Essayer en temps réel ?</h1>
+      <button class="btn btn-primary btn-lg" (click)="onStartTryOn(selectedGlass)"> 
+        Cliquer ici et c'est parti !
+      </button>
+    </div>
+  </div>
+  <!-- Modal overlay -->
+<div *ngIf="showVirtualTryOn" class="virtual-glasses-modal">
+    <div class="modal-backdrop" (click)="showVirtualTryOn = false"></div>
+  
+    <div class="modal-content p-0">
+       <app-virtual-glasses 
+       [glass]="selectedGlass" 
+       [glassesList]="glassesList"
+       [showGlassList]="false"
+     ></app-virtual-glasses>     
+      <button class="close-btn" (click)="showVirtualTryOn = false">×</button>
+    </div>
+  </div>
+  <!-- <div *ngIf="showVirtualTryOn" class="virtual-glasses-modal">
+    <div class="modal-backdrop" (click)="showVirtualTryOn = false"></div>
+    <div class="modal-content">
+      <app-virtual-glasses
+    [glass]="selectedGlass"
+    [showGlassList]="true"
+    [glassesList]="glassesList"
+    (close)="showVirtualTryOn = false">
+  </app-virtual-glasses>
+  
+      <button class="close-btn" (click)="showVirtualTryOn = false">×</button>
+    </div>
+  </div> -->
+  
+  
