@@ -50,10 +50,6 @@
           class="position-absolute top-0 start-0 w-100 h-100"
             style="z-index: 2;"
         ></canvas>
-
-        <!-- Three.js rendu -->
-        <!-- class="position-absolute top-0 start-0 w-100 h-100"
-        style="z-index: 2;" -->
         <div
           #threeContainer
           id="threeContainer"
@@ -100,71 +96,13 @@
         </button>
       </div>
     </div>
-<!-- <div class="tab-pane fade show active" *ngIf="activeTab === 'upload'">
-    <app-image-upload></app-image-upload>
-  </div> -->
   <div class="tab-pane fade" id="upload" role="tabpanel">
   <div class="upload-container">
     <div class="header">
       <h2><i class="fas fa-cloud-upload-alt me-2"></i> Import d'Image</h2>
       <p class="mb-0">Glissez-déposez ou cliquez pour téléverser une image</p>
     </div>
-    <div class="content p-4">
-      <div 
-        class="upload-area"
-        [class.dragging]="isDragging"
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave($event)"
-        (drop)="onDrop($event)"
-        (click)="onFileClick()"
-      >
-        <div *ngIf="!previewUrl" class="upload-prompt">
-          <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
-          <h4>Glissez votre image ici</h4>
-          <p class="text-muted">ou cliquez pour parcourir vos fichiers</p>
-          <p class="small text-muted">Formats supportés: JPG, PNG, GIF (max 5 Mo)</p>
-        </div>
-        <div *ngIf="previewUrl" class="preview-container position-relative">
-          <img #uploadedImage [src]="previewUrl" class="preview-image" alt="Aperçu de l'image">
-          <canvas #overlayCanvasImage class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 2;"></canvas>
-          <div #threeContainerImage class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none; z-index: 3;"></div>
-          <div class="file-info mt-3">
-            <p><i class="fas fa-file-image me-2"></i> {{ fileName }}</p>
-            <p><i class="fas fa-weight-hanging me-2"></i> {{ fileSize }}</p>
-          </div>
-        </div>
-        <input 
-          #fileInput 
-          type="file" 
-          class="d-none" 
-          accept="image/*" 
-          (change)="onFileSelected($event)"
-        >
-      </div>
-      <div *ngIf="isUploading" class="progress-container mt-3">
-        <div class="d-flex justify-content-between mb-2">
-          <span>Téléchargement en cours...</span>
-          <span>{{ uploadProgress }}%</span>
-        </div>
-        <div class="progress" style="height: 10px;">
-          <div 
-            class="progress-bar progress-bar-striped progress-bar-animated" 
-            role="progressbar" 
-            [style.width]="uploadProgress + '%'"
-          ></div>
-        </div>
-      </div>
-      <div class="controls">
-</div>
-      <div *ngIf="previewUrl && !isUploading" class="d-flex justify-content-center gap-3 mt-4">
-        <button class="btn btn-danger" (click)="reset()">
-          <i class="fas fa-trash me-2"></i> Effacer
-        </button>
-        <button class="btn btn-success" (click)="onFileClick()">
-          <i class="fas fa-sync me-2"></i> Changer
-        </button>
       </div>
     </div>
   </div>
-</div>
 </div>

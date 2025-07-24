@@ -33,12 +33,7 @@ export class VirtualGlassesComponent implements OnInit, AfterViewInit, OnDestroy
   capturedPhoto: string | null = null;
   private renderer3D !: THREE.WebGLRenderer;
   private scene3D!: THREE.Scene;
-  //private camera3D!: THREE.PerspectiveCamera;
   private camera3D!: THREE.PerspectiveCamera;
-  private renderer3DImage!: THREE.WebGLRenderer;
-  private scene3DImage!: THREE.Scene;
-  private camera3DImage!: THREE.PerspectiveCamera;
-  private glasses3DImage?: THREE.Object3D;
   private glasses3D?: THREE.Object3D;
   private threeInitialized = false;
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
@@ -47,13 +42,13 @@ export class VirtualGlassesComponent implements OnInit, AfterViewInit, OnDestroy
   @Input() showGlassList: boolean = false;
   @Input() glassesList: any[] = []; 
   @Output() close = new EventEmitter<void>(); 
-  model3DPath: string = 'assets/models/model1.glb'; //chemin par 
-  //glassesList: Glasses[] = [];
+  model3DPath: string = 'assets/models/model1.glb';
   errorMessage !:string;
   private resizeObserver?: ResizeObserver;
 private currentVideoWidth = 640;
 private currentVideoHeight = 480;
-private needsThreeJSResize = false;
+private rotationHistory: THREE.Euler[] = [];
+private readonly ROTATION_HISTORY_SIZE = 3; 
   //obtenir la glass en 3D
   getModel3DPathFromGlass(glass: any): string {
     if (glass.model3DPath) {
@@ -63,6 +58,7 @@ private needsThreeJSResize = false;
     return 'assets/models/model1.glb';
   }
   ////////////////
+  private targetFrameTime: number;
   constructor(
     private cameraService: CameraService,
     private faceMeshService: FaceMeshService,
@@ -77,6 +73,8 @@ private needsThreeJSResize = false;
         this.cameraState$.next(isActive);
       }
     );
+    const settings = this.getPerformanceSettings();
+  this.targetFrameTime = 1000 / settings.maxFPS;
   }
 
   private isInitialized = false;
@@ -123,19 +121,56 @@ private needsThreeJSResize = false;
     }
     
   }
+  // 2. DÉTECTION DE PLATEFORME MOBILE
+private isMobile(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+    || window.innerWidth <= 768;
+}
+
+// 3. PARAMÈTRES ADAPTATIFS SELON LA PLATEFORME
+private getPerformanceSettings() {
+  const isMobile = this.isMobile();
+  return {
+    rotationHistorySize: isMobile ? 2 : 5, // Historique plus petit sur mobile
+    smoothingFactor: isMobile ? 0.3 : 0.1, // Lissage moins fort sur mobile
+    skipFrames: isMobile ? 2 : 0, // Sauter 1 frame sur 3 sur mobile
+    reducedPrecision: isMobile, // Précision réduite sur mobile
+    maxFPS: isMobile ? 24 : 60 // Limiter les FPS sur mobile
+  };
+}
   private animationFrameId: number | null = null;
-  private startAnimationLoop() {
-    const render = () => {
-      this.animationFrameId = requestAnimationFrame(render);
-      
-      // Mettre à jour uniquement si la caméra est active
-      if (this.cameraState$.value) {
-        this.animate3D();
-        this.renderer3D.render(this.scene3D, this.camera3D);
-      }
-    };
+// 16. MODIFICATION DE LA BOUCLE D'ANIMATION FINALE
+private startAnimationLoop() {
+  const render = (currentTime: number) => {
     this.animationFrameId = requestAnimationFrame(render);
-  }
+    
+    // Monitoring de performance
+    this.monitorPerformance();
+    
+    // Limitation FPS
+    if (currentTime - this.lastFrameTime < this.targetFrameTime) {
+      return;
+    }
+    this.lastFrameTime = currentTime;
+    
+    // Skip frames si nécessaire
+    if (this.shouldSkipFrame()) {
+      return;
+    }
+    
+    // Nettoyage périodique
+    if (this.performanceMonitor.frameCount % 60 === 0) {
+      this.cleanupOptimization();
+    }
+    
+    if (this.cameraState$.value) {
+      this.animate3D();
+      this.renderer3D.render(this.scene3D, this.camera3D);
+    }
+  };
+  this.animationFrameId = requestAnimationFrame(render);
+}
+
   ngAfterViewInit(): void {
     this.isInitialized = true;
     this.initThreeJS();
@@ -257,41 +292,50 @@ const rotationX = Math.atan2(noseRelativeY, 1) * 0.3;
 
 return new THREE.Euler(rotationX, rotationY, rotationZ);
 }
-// Nouveau système de lissage temporel
-private rotationHistory: THREE.Euler[] = [];
-private readonly ROTATION_HISTORY_SIZE = 5;
-
+// 4. OPTIMISATION DU LISSAGE AVEC PARAMÈTRES ADAPTATIFS
 private smoothRotation(newRotation: THREE.Euler): THREE.Euler {
-this.rotationHistory.push(newRotation.clone());
+  const settings = this.getPerformanceSettings();
+  
+  this.rotationHistory.push(newRotation.clone());
 
-if (this.rotationHistory.length > this.ROTATION_HISTORY_SIZE) {
-this.rotationHistory.shift();
+  if (this.rotationHistory.length > settings.rotationHistorySize) {
+    this.rotationHistory.shift();
+  }
+
+  // Sur mobile, utiliser un lissage plus simple et plus rapide
+  if (settings.reducedPrecision) {
+    // Lissage linéaire simple pour mobile
+    if (this.rotationHistory.length === 1) {
+      return newRotation.clone();
+    }
+    
+    const prev = this.rotationHistory[this.rotationHistory.length - 2];
+    const smoothed = new THREE.Euler(
+      prev.x * (1 - settings.smoothingFactor) + newRotation.x * settings.smoothingFactor,
+      prev.y * (1 - settings.smoothingFactor) + newRotation.y * settings.smoothingFactor,
+      prev.z * (1 - settings.smoothingFactor) + newRotation.z * settings.smoothingFactor
+    );
+    return smoothed;
+  }
+
+  // Lissage complet pour desktop
+  const smoothed = new THREE.Euler(0, 0, 0);
+  let totalWeight = 0;
+
+  this.rotationHistory.forEach((rotation, index) => {
+    const weight = (index + 1) / this.rotationHistory.length;
+    smoothed.x += rotation.x * weight;
+    smoothed.y += rotation.y * weight;
+    smoothed.z += rotation.z * weight;
+    totalWeight += weight;
+  });
+
+  smoothed.x /= totalWeight;
+  smoothed.y /= totalWeight;
+  smoothed.z /= totalWeight;
+
+  return smoothed;
 }
-
-// Moyenne pondérée avec plus de poids sur les valeurs récentes
-const smoothed = new THREE.Euler(0, 0, 0);
-let totalWeight = 0;
-
-this.rotationHistory.forEach((rotation, index) => {
-const weight = (index + 1) / this.rotationHistory.length; // Poids croissant
-smoothed.x += rotation.x * weight;
-smoothed.y += rotation.y * weight;
-smoothed.z += rotation.z * weight;
-totalWeight += weight;
-});
-
-smoothed.x /= totalWeight;
-smoothed.y /= totalWeight;
-smoothed.z /= totalWeight;
-
-return smoothed;
-}
-private frameCount = 0;
-private lastTransform: {
-  position: THREE.Vector3;
-  rotation: THREE.Euler;
-  scale: THREE.Vector3;
-} | null = null;
 private glassesOffset = {
   horizontal:0,
   vertical:0,
@@ -366,6 +410,32 @@ private calculateEarPositions(points: any, rotations: THREE.Euler): {leftEar: TH
     rightEar: rightEarFinal
   };
 }
+private calculateEarPositionsOptimized(points: any, rotations: THREE.Euler): {leftEar: THREE.Vector3, rightEar: THREE.Vector3} {
+  const settings = this.getPerformanceSettings();
+  
+  if (settings.reducedPrecision) {
+    // Version simplifiée pour mobile
+    const eyeDistance = points.leftEye.distanceTo(points.rightEye);
+    const faceWidth = eyeDistance * 1.8;
+    
+    const leftEar = new THREE.Vector3(
+      points.leftEye.x - faceWidth * 0.6,
+      points.leftEye.y + eyeDistance * 0.2,
+      points.leftEye.z - eyeDistance * 0.1
+    );
+    
+    const rightEar = new THREE.Vector3(
+      points.rightEye.x + faceWidth * 0.6,
+      points.rightEye.y + eyeDistance * 0.2,
+      points.rightEye.z - eyeDistance * 0.1
+    );
+    
+    return { leftEar, rightEar };
+  } else {
+    // Version complète pour desktop
+    return this.calculateEarPositions(points, rotations);
+  }
+}
 // 3. Ajustement basé sur les landmarks disponibles
 private adjustEarWithLandmarks(earBase: THREE.Vector3, points: any, isLeft: boolean): THREE.Vector3 {
   const adjusted = earBase.clone();
@@ -427,10 +497,48 @@ private compensateEarForRotation(earPosition: THREE.Vector3, rotations: THREE.Eu
   
   return compensated;
 }
+private cleanupOptimization() {
+  // Limiter la taille des historiques sur mobile
+  const settings = this.getPerformanceSettings();
+  
+  if (this.rotationHistory.length > settings.rotationHistorySize * 2) {
+    this.rotationHistory = this.rotationHistory.slice(-settings.rotationHistorySize);
+  }
+}
 
+// 15. DÉTECTION DE PERFORMANCE ET AJUSTEMENT DYNAMIQUE
+private performanceMonitor = {
+  frameCount: 0,
+  lastCheck: Date.now(),
+  avgFrameTime: 16.67, // 60fps target
+  adaptiveMode: false
+};
 
-// 6. Mise à jour de calculateGlassesTransform pour utiliser la nouvelle méthode
+private monitorPerformance() {
+  this.performanceMonitor.frameCount++;
+  const now = Date.now();
+  
+  if (now - this.performanceMonitor.lastCheck > 1000) { // Vérifier chaque seconde
+    const actualFPS = this.performanceMonitor.frameCount;
+    this.performanceMonitor.frameCount = 0;
+    this.performanceMonitor.lastCheck = now;
+    
+    // Si les performances sont mauvaises, activer le mode adaptatif
+    if (actualFPS < 20 && this.isMobile()) {
+      this.performanceMonitor.adaptiveMode = true;
+      this.targetFrameTime = 1000 / 15; // Réduire à 15fps
+      console.log('Mode performance adaptatif activé');
+    } else if (actualFPS > 25 && this.performanceMonitor.adaptiveMode) {
+      this.performanceMonitor.adaptiveMode = false;
+      this.targetFrameTime = 1000 / 24; // Revenir à 24fps
+      console.log('Mode performance normal restauré');
+    }
+  }
+}
+// 12. CALCUL DE TRANSFORMATION OPTIMISÉ
 private calculateGlassesTransform(points: any) {
+  const settings = this.getPerformanceSettings();
+  
   // A. Centre entre les yeux
   const eyeCenter = new THREE.Vector3()
     .addVectors(points.leftEye, points.rightEye)
@@ -440,25 +548,38 @@ private calculateGlassesTransform(points: any) {
   const nosePosition = points.noseBridge.clone();
   nosePosition.y += this.glassesOffset.noseOffset;
   
-  // C. Calcul des rotations 3D
-  const rotations = this.calculateFaceRotations(points);
+  // C. Calcul des rotations optimisé
+  const rotations = settings.reducedPrecision ? 
+    this.calculateFaceRotations(points) : 
+    this.calculateFaceRotations(points);
   
-  // D. Calcul amélioré des positions des oreilles
-  const earPositions = this.calculateEarPositions(points, rotations);
+  // D. Lissage des rotations
+  const smoothedRotations = this.smoothRotation(rotations);
   
-  // E. Position finale
-  const depthAdjustment = Math.cos(rotations.y) * 10 + Math.cos(rotations.x) * 5;
-const finalPosition = new THREE.Vector3(
-  eyeCenter.x + this.glassesOffset.horizontal,
-  eyeCenter.y + this.glassesOffset.vertical,
-  nosePosition.z + this.glassesOffset.depth - depthAdjustment
-);
-// // Limiter les variations d'échelle
-const scale = this.calculateOptimalScale(points);
+  // E. Calcul des oreilles optimisé
+  const earPositions = settings.reducedPrecision ?
+    this.calculateEarPositionsOptimized(points, smoothedRotations) :
+    this.calculateEarPositions(points, smoothedRotations);
+  
+  // F. Position finale
+  const depthAdjustment = settings.reducedPrecision ? 
+    10 : // Valeur fixe pour mobile
+    Math.cos(smoothedRotations.y) * 10 + Math.cos(smoothedRotations.x) * 5;
+    
+  const finalPosition = new THREE.Vector3(
+    eyeCenter.x + this.glassesOffset.horizontal,
+    eyeCenter.y + this.glassesOffset.vertical,
+    nosePosition.z + this.glassesOffset.depth - depthAdjustment
+  );
+  
+  // G. Échelle optimisée
+  const scale = settings.reducedPrecision ?
+    this.calculateOptimalScale(points) :
+    this.calculateOptimalScale(points);
 
   return {
     position: finalPosition,
-    rotation: rotations,
+    rotation: smoothedRotations,
     scale: new THREE.Vector3(scale, scale, scale),
     nosePosition: nosePosition,
     leftEarPosition: earPositions.leftEar,
@@ -466,23 +587,6 @@ const scale = this.calculateOptimalScale(points);
     eyeCenter: eyeCenter
   };
 }
-// Nouvelle méthode pour calculer une échelle optimale
-// private calculateOptimalScale(points: any): number {
-//   const ipd = points.leftEye.distanceTo(points.rightEye);
-//   const eyeToNose = points.eyeCenter.distanceTo(points.noseBridge);
-//   const faceWidth = points.leftEyeOuter.distanceTo(points.rightEyeOuter);
-  
-//   // Facteurs de réduction
-//   const ipdFactor = ipd / 80; // Réduction par rapport à 120 pixels
-//   const faceFactor = faceWidth / 100; // Réduction par rapport à 180 pixels
-//   const noseFactor = eyeToNose / 30; // Réduction par rapport à 50 pixels
-  
-//   // Moyenne pondérée des facteurs
-//   const scale = (ipdFactor * 0.5 + faceFactor * 0.3 + noseFactor * 0.2);
-  
-//   // Limitation stricte
-//   return Math.max(0.4, Math.min(1.2, scale));
-// }
 private calculateOptimalScale(points: any): number {
   const ipd = points.leftEye.distanceTo(points.rightEye);
   const eyeToNose = points.eyeCenter.distanceTo(points.noseBridge);
@@ -511,11 +615,26 @@ private calculateOptimalScale(points: any): number {
 // Méthode pour lisser les variations d'échelle
 private previousScale: number = 1.0;
 private smoothScale(newScale: number): number {
-  // Lissage exponentiel pour éviter les changements brusques
-  const smoothingFactor = 0.1; // Plus petit = plus lisse
-  this.previousScale = this.previousScale * (1 - smoothingFactor) + newScale * smoothingFactor;
+  const settings = this.getPerformanceSettings();
+  this.previousScale = this.previousScale * (1 - settings.smoothingFactor) + newScale * settings.smoothingFactor;
   return this.previousScale;
 }
+// 6. SKIP FRAMES POUR MOBILE
+private frameSkipCounter = 0;
+private shouldSkipFrame(): boolean {
+  const settings = this.getPerformanceSettings();
+  if (settings.skipFrames === 0) return false;
+  
+  this.frameSkipCounter++;
+  if (this.frameSkipCounter >= settings.skipFrames) {
+    this.frameSkipCounter = 0;
+    return false; // Traiter cette frame
+  }
+  return true; // Sauter cette frame
+}
+
+// 7. LIMITATION FPS POUR MOBILE
+private lastFrameTime = 0;
 // 3. Conversion précise des coordonnées
 private convertLandmarkToThreeJS(landmark: any, videoWidth: number, videoHeight: number): THREE.Vector3 {
   // Conversion standard MediaPipe -> Three.js
@@ -525,47 +644,6 @@ private convertLandmarkToThreeJS(landmark: any, videoWidth: number, videoHeight:
   
   return new THREE.Vector3(x, y, z);
 }
-// 5. Mise à jour de extractGlassesPoints pour inclure les nouveaux points
-// private extractGlassesPoints(landmarks: any[], videoWidth: number, videoHeight: number) {
-//   const getPoint = (index: number) => 
-//     this.convertLandmarkToThreeJS(landmarks[index], videoWidth, videoHeight);
-  
-//   const points: any = {
-//     // Yeux
-//     leftEye: getPoint(this.FACE_LANDMARKS.leftEyeCenter),
-//     rightEye: getPoint(this.FACE_LANDMARKS.rightEyeCenter),
-//     leftEyeOuter: getPoint(this.FACE_LANDMARKS.leftEyeOuter),
-//     rightEyeOuter: getPoint(this.FACE_LANDMARKS.rightEyeOuter),
-    
-//     // Nez
-//     noseBridge: getPoint(this.FACE_LANDMARKS.noseBridge),
-//     noseTop: getPoint(this.FACE_LANDMARKS.noseTop),
-//     noseTip: getPoint(this.FACE_LANDMARKS.noseTip),
-    
-//     // Points pour calculer les oreilles
-//     leftEarApprox: getPoint(this.FACE_LANDMARKS.leftEar),
-//     rightEarApprox: getPoint(this.FACE_LANDMARKS.rightEar),
-//     leftTemple: getPoint(this.FACE_LANDMARKS.leftTemple),
-//     rightTemple: getPoint(this.FACE_LANDMARKS.rightTemple),
-//     leftSideface: getPoint(this.FACE_LANDMARKS.leftJaw),
-//     rightSideface: getPoint(this.FACE_LANDMARKS.rightJaw),
-//     leftCheekbone: getPoint(this.FACE_LANDMARKS.leftCheek),
-//     rightCheekbone: getPoint(this.FACE_LANDMARKS.rightCheek),
-    
-//     // Points pour la rotation 3D
-//     forehead: getPoint(this.FACE_LANDMARKS.forehead),
-//     chin: getPoint(this.FACE_LANDMARKS.chin),
-//     mouthLeft: getPoint(this.FACE_LANDMARKS.mouthLeft),
-//     mouthRight: getPoint(this.FACE_LANDMARKS.mouthRight)
-//   };
-  
-//   // Calculer le centre des yeux
-//   points.eyeCenter = new THREE.Vector3()
-//     .addVectors(points.leftEye, points.rightEye)
-//     .multiplyScalar(0.5);
-  
-//   return points;
-// }
 private extractGlassesPoints(landmarks: any[], videoWidth: number, videoHeight: number) {
   // Utiliser les vraies dimensions vidéo, pas les dimensions d'affichage
   const realVideoWidth = this.videoElement?.nativeElement?.videoWidth || videoWidth;
@@ -643,10 +721,6 @@ public animate(faceMeshService: any, videoElement: HTMLVideoElement | null, glas
     
     // 3. Positionner les lunettes
     this.positionGlassesWithThreePointSupport(glasses3D, transform);
-    //this.drawLandmarksDebug();
-// const gridHelper = new THREE.GridHelper(640, 10); // taille = largeur vidéo
-// gridHelper.rotation.x = Math.PI / 2; // Tourne la grille pour qu'elle soit dans le plan XY
-// this.scene3D.add(gridHelper); 
   } catch (error) {
     console.error('Erreur dans l\'animation des lunettes:', error);
   }
@@ -869,14 +943,6 @@ if (this.faceMeshService.getFaceLandmarks()) {
   this.glasses3D.position.copy(points.eyeCenter);
 }
 this.scene3D.add(this.glasses3D);
-// const sphere = new THREE.Mesh(
-//   new THREE.SphereGeometry(10), // taille adaptée à ta scène
-//   new THREE.MeshBasicMaterial({ color: 0xff0000 })
-// );
-
-
-// sphere.position.copy(this.glasses3D.position);
-// this.scene3D.add(sphere);
       },
       undefined,
       (error) => {
@@ -884,35 +950,6 @@ this.scene3D.add(this.glasses3D);
       }
     );
   }
-//   private initThreeJS() {
-//     if (this.threeInitialized) return;
-//     this.scene3D = new THREE.Scene();
-//     this.scene3D.background = null;
-//     // Ajoute une lumière pour rendre le modèle visible
-//     const light = new THREE.AmbientLight(0xffffff, 1);
-//     this.scene3D.add(light);
-//     // Récupère la taille de la vidéo pour le ratio
-//     const video = this.videoElement?.nativeElement;  
-//    const videoWidth = video?.videoWidth || 640;
-//     const videoHeight = video?.videoHeight || 480;
-//     const aspectRatio = videoWidth / videoHeight;
-//   const fov = 50; // ou la valeur que tu utilises
-//   const cameraDistance = (videoHeight / 2) / Math.tan((fov * Math.PI / 180) / 2);
-//   this.camera3D = new THREE.PerspectiveCamera(fov, aspectRatio, 0.1, 5000);
-//   this.camera3D.position.set(0, 0, cameraDistance);
-//     this.camera3D.lookAt(0, 0, 0);
-//     this.renderer3D = new THREE.WebGLRenderer({ alpha: true });
-//     this.renderer3D.setSize(videoWidth, videoHeight);
-//     this.renderer3D.domElement.style.width = videoWidth + 'px';
-// this.renderer3D.domElement.style.height = videoHeight + 'px';
-//     this.threeContainer.nativeElement.appendChild(this.renderer3D.domElement);
-//     console.log('Ajout du renderer Three.js au conteneur', this.threeContainer.nativeElement);
-//     if (this.glass) {
-//       this.load3DModel();
-//     }
-//     this.threeInitialized = true;
-    
-//   }  
 // 11. Modifiez initThreeJS pour être plus flexible
 private initThreeJS() {
   if (this.threeInitialized) return;

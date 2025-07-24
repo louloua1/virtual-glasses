@@ -2,7 +2,6 @@ import { Component, effect, ElementRef, ViewChild } from '@angular/core';
 import { SideBarComponent } from "../side-bar/side-bar.component";
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule } from '@angular/forms';
-import { BehaviorSubject, catchError, Observable, throwError } from 'rxjs';
 import { VirtualGlassesService } from '../../services/virtual-glasses.service';
 import { PageGlasses } from '../../classes/page-glasses';
 import { VirtualGlassesComponent } from "../virtual-glasses/virtual-glasses.component";
@@ -16,7 +15,7 @@ import { VirtualGlassesComponent } from "../virtual-glasses/virtual-glasses.comp
   styleUrl: './glasses.component.css'
 })
 export class GlassesComponent {
-  lunettes !:any[]; // Changed from Glasses[] to any[]
+  lunettes !:any[];
   errorMessage !:string;
   currentPage:number=0;
   pageSize:number=4;
