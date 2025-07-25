@@ -1,0 +1,139 @@
+
+.preview-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    max-width: 100%;
+  }
+  
+  .image-display-info {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    border: 1px solid #dee2e6;
+  }
+  
+  .image-wrapper {
+    position: relative;
+    display: inline-block;
+    border: 3px solid #007bff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 25px rgba(0, 123, 255, 0.15);
+    transition: all 0.3s ease;
+    background: white;
+  }
+  
+  .image-wrapper:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(0, 123, 255, 0.2);
+  }
+  
+  .preview-image {
+    display: block;
+    object-fit: contain;
+    border-radius: 9px;
+    background: #f8f9fa;
+  }
+  
+  #overlayCanvasImage {
+    pointer-events: none;
+    opacity: 0.9;
+  }
+  
+  #threeContainerImage {
+    pointer-events: none;
+  }
+  
+  #threeContainerImage canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+  }
+  
+  .upload-area {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .upload-area:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+  }
+  
+  .upload-area.dragging {
+    border-color: #007bff;
+    background-color: #e3f2fd;
+    transform: scale(1.02);
+  }
+  
+  .upload-prompt {
+    color: #6c757d;
+  }
+  
+  .upload-prompt i {
+    color: #007bff;
+    margin-bottom: 1rem;
+  }
+  
+  .file-info {
+    background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid #e9ecef;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    min-width: 400px;
+    max-width: 600px;
+  }
+  
+  .file-info p {
+    margin: 0.5rem 0;
+    font-size: 0.95rem;
+    color: #495057;
+    display: flex;
+    align-items: center;
+  }
+  
+  .file-info strong {
+    margin-left: 0.25rem;
+  }
+  
+  .file-info .row {
+    margin: 0;
+  }
+  
+  .file-info .col-md-6 {
+    padding: 0.25rem 0.5rem;
+  }
+  
+  .progress-container {
+    background: white;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+  }
+  
+  .controls {
+    margin-top: 1rem;
+  }
+  
+  /* Media queries pour responsive */
+  @media (max-width: 768px) {
+    .image-wrapper {
+      max-width: 100%;
+    }
+    
+    .preview-image {
+      max-width: 100%;
+      height: auto;
+    }
+  }

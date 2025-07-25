@@ -5,11 +5,12 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { VirtualGlassesService } from '../../services/virtual-glasses.service';
 import { PageGlasses } from '../../classes/page-glasses';
 import { VirtualGlassesComponent } from "../virtual-glasses/virtual-glasses.component";
+import { ImporterImageComponent } from '../../importer-image/importer-image.component';
 
 
 @Component({
   selector: 'app-glasses',
-  imports: [SideBarComponent, CommonModule, ReactiveFormsModule, VirtualGlassesComponent],
+  imports: [SideBarComponent, CommonModule, ReactiveFormsModule, VirtualGlassesComponent, ImporterImageComponent],
   templateUrl: './glasses.component.html',
   standalone:true,
   styleUrl: './glasses.component.css'
@@ -22,6 +23,7 @@ export class GlassesComponent {
   totalPages!:number;
   selectedGlass: any = null;
   showVirtualTryOn = false ;  
+  UploadImage = false ;  
   constructor(private lunetteService: VirtualGlassesService) {
     effect(() => {
       const pageResult = this.lunetteService.filteredGlassesPage();
@@ -74,6 +76,11 @@ export class GlassesComponent {
   {
     this.selectedGlass = glass;
     this.showVirtualTryOn = true;
+  }
+  tryGlassesImage(glass: any) // Changed from Glasses to any
+  {
+    this.selectedGlass = glass;
+    this.UploadImage = true;
   }
   viewDetails(glass: any) // Changed from Glasses to any
   {

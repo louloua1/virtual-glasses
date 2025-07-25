@@ -21,6 +21,7 @@
                 </div>
                 <div class="mt-auto d-flex justify-content-between">
                   <button class="btn btn-success" (click)="tryGlasses(glass)">Essayer</button>
+                  <button class="btn btn-success" (click)="tryGlassesImage(glass)">upload Image</button>
                   <button class="btn btn-primary" (click)="viewDetails(glass)">Voir détail</button>
                 </div>
               </div>
@@ -44,6 +45,51 @@
 <button 
 class="close-btn" 
 (click)="showVirtualTryOn = false"
+style="
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+"
+>
+×
+</button>
+  </div>
+</div>
+<div *ngIf="UploadImage" class="virtual-glasses-modal">
+  <div class="modal-backdrop" (click)="showVirtualTryOn = false"></div>
+  <div class="modal-content" style="
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  width: auto;
+  max-width: 95vw;
+  max-height: 95vh;
+  overflow: visible; /* 🔥 important */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+">
+    <app-importer-image
+  [glass]="selectedGlass"
+  (close)="showVirtualTryOn = false">
+</app-importer-image>
+
+<button 
+class="close-btn" 
+(click)="UploadImage = false"
 style="
   position: absolute;
   top: 10px;

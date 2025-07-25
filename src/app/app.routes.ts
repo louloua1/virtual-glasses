@@ -9,4 +9,6 @@ export const routes: Routes = [
     {path:'' , redirectTo:'home',pathMatch:'full'},
     { path:'lunettes', component: GlassesComponent },
     { path:'essayage', component: EssayageComponent },
+    { path:'virtual-glasses', component: VirtualGlassesComponent },
+    
 ];

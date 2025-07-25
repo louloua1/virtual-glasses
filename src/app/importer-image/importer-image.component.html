@@ -1,0 +1,184 @@
+<div class="content p-4">
+    <div 
+      class="upload-area"
+      [class.dragging]="isDragging"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+      (click)="onFileClick()"
+    >
+      <!-- Zone de dépôt quand aucune image n'est chargée -->
+      <div *ngIf="!previewUrl" class="upload-prompt">
+        <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+        <h4>Glissez votre image ici</h4>
+        <p class="text-muted">ou cliquez pour parcourir vos fichiers</p>
+        <p class="small text-muted">Formats supportés: JPG, PNG, GIF (max 5 Mo)</p>
+        <p class="small text-info">
+          <i class="fas fa-info-circle me-1"></i>
+          L'image sera automatiquement redimensionnée pour un affichage optimal
+        </p>
+      </div>
+  
+      <!-- Zone d'affichage de l'image redimensionnée -->
+      <div *ngIf="previewUrl" class="preview-container position-relative">
+        <!-- Information sur le redimensionnement -->
+        <div class="image-display-info mb-3 text-center" *ngIf="imageDisplayWidth > 0">
+          <small class="text-muted">
+            <i class="fas fa-compress-arrows-alt me-1"></i>
+            Image optimisée pour l'affichage : {{ imageDisplayWidth }}×{{ imageDisplayHeight }}px
+            <span *ngIf="getReductionPercentage() && getReductionPercentage() !== 'Aucune'">
+              (réduction de {{ getReductionPercentage() }})
+            </span>
+          </small>
+        </div>
+        
+        <!-- Container de l'image avec canvas et Three.js -->
+        <div class="image-wrapper" [style.width.px]="imageDisplayWidth" [style.height.px]="imageDisplayHeight">
+          <img 
+            #uploadedImage 
+            [src]="previewUrl" 
+            class="preview-image" 
+            alt="Aperçu de l'image"
+            [style.width.px]="imageDisplayWidth"
+            [style.height.px]="imageDisplayHeight"
+            (load)="onImageDisplayed()"
+          >
+          <!-- Canvas pour les overlays 2D -->
+          <canvas 
+            #overlayCanvasImage 
+            class="position-absolute top-0 start-0" 
+            [width]="imageDisplayWidth"
+            [height]="imageDisplayHeight"
+            [style.width.px]="imageDisplayWidth"
+            [style.height.px]="imageDisplayHeight"
+            style="z-index: 2;"
+          ></canvas>
+          <!-- Container Three.js pour les lunettes 3D -->
+          <div 
+            #threeContainerImage 
+            class="position-absolute top-0 start-0" 
+            [style.width.px]="imageDisplayWidth"
+            [style.height.px]="imageDisplayHeight"
+            style="pointer-events: none; z-index: 3;"
+          ></div>
+        </div>
+        
+        <!-- Informations détaillées sur le fichier -->
+        <div class="file-info mt-3">
+          <div class="row">
+            <div class="col-md-6">
+              <p>
+                <i class="fas fa-file-image me-2 text-primary"></i>
+                <strong>Fichier:</strong> {{ fileName }}
+              </p>
+              <p>
+                <i class="fas fa-weight-hanging me-2 text-info"></i>
+                <strong>Taille:</strong> {{ fileSize }}
+              </p>
+            </div>
+            <div class="col-md-6" *ngIf="imageOriginalWidth > 0">
+              <p>
+                <i class="fas fa-expand-arrows-alt me-2 text-secondary"></i>
+                <strong>Original:</strong> {{ getOriginalDimensions() }}
+              </p>
+              <p>
+                <i class="fas fa-compress-arrows-alt me-2 text-success"></i>
+                <strong>Affichage:</strong> {{ imageDisplayWidth }}×{{ imageDisplayHeight }}px
+              </p>
+            </div>
+          </div>
+          
+          <!-- Indicateur de réduction si applicable -->
+          <div *ngIf="getReductionPercentage() && getReductionPercentage() !== 'Aucune'" 
+               class="text-center mt-2 pt-2 border-top">
+            <small class="text-success">
+              <i class="fas fa-check-circle me-1"></i>
+              Image optimisée - Réduction de {{ getReductionPercentage() }} pour de meilleures performances
+            </small>
+          </div>
+        </div>
+      </div>
+  
+      <!-- Input file caché -->
+      <input 
+        #fileInput
+        type="file"
+        class="d-none"
+        accept="image/*"
+        (change)="onFileSelected($event)"
+      >
+    </div>
+  
+    <!-- Barre de progression du téléchargement -->
+    <div *ngIf="isUploading" class="progress-container mt-3">
+      <div class="d-flex justify-content-between mb-2">
+        <span>
+          <i class="fas fa-upload me-2"></i>
+          Traitement de l'image en cours...
+        </span>
+        <span class="fw-bold">{{ uploadProgress }}%</span>
+      </div>
+      <div class="progress" style="height: 12px;">
+        <div 
+          class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+          role="progressbar"
+          [style.width]="uploadProgress + '%'"
+          [attr.aria-valuenow]="uploadProgress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        ></div>
+      </div>
+      <small class="text-muted mt-1 d-block text-center">
+        L'image sera automatiquement redimensionnée pour un affichage optimal
+      </small>
+    </div>
+  
+    <!-- Contrôles de l'image -->
+    <div *ngIf="previewUrl && !isUploading" class="d-flex justify-content-center gap-3 mt-4">
+      <!-- Bouton pour effacer -->
+      <button class="btn btn-outline-danger" (click)="reset()">
+        <i class="fas fa-trash me-2"></i> 
+        Effacer
+      </button>
+      
+      <!-- Bouton pour changer d'image -->
+      <button class="btn btn-outline-primary" (click)="onFileClick()">
+        <i class="fas fa-sync me-2"></i> 
+        Changer d'image
+      </button>
+      
+      <!-- Bouton pour voir l'image en taille réelle (optionnel) -->
+      <button class="btn btn-outline-info" *ngIf="getReductionPercentage() && getReductionPercentage() !== 'Aucune'"
+              (click)="showOriginalSize()" title="Voir les dimensions originales">
+        <i class="fas fa-search-plus me-2"></i>
+        Original
+      </button>
+    </div>
+  
+    <!-- Message d'erreur si nécessaire -->
+    <div *ngIf="errorMessage" class="alert alert-danger mt-3" role="alert">
+      <i class="fas fa-exclamation-triangle me-2"></i>
+      {{ errorMessage }}
+    </div>
+  
+    <!-- Instructions d'utilisation -->
+    <div *ngIf="!previewUrl && !isUploading" class="mt-4">
+      <div class="card border-info">
+        <div class="card-body text-center">
+          <h6 class="card-title text-info">
+            <i class="fas fa-lightbulb me-2"></i>
+            Comment ça marche ?
+          </h6>
+          <p class="card-text small text-muted mb-2">
+            1. Importez votre image (elle sera automatiquement redimensionnée)<br>
+            2. La détection faciale identifiera votre visage<br>
+            3. Les lunettes 3D s'ajusteront automatiquement à votre morphologie
+          </p>
+          <small class="text-info">
+            <i class="fas fa-magic me-1"></i>
+            Optimisation automatique pour de meilleures performances
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
