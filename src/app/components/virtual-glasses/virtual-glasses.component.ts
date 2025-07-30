@@ -707,11 +707,6 @@ private calculateOptimalScale(points: any): number {
 
 // Méthode pour lisser les variations d'échelle
 private previousScale: number = 1.0;
-// private smoothScale(newScale: number): number {
-//   const settings = this.getPerformanceSettings();
-//   this.previousScale = this.previousScale * (1 - settings.smoothingFactor) + newScale * settings.smoothingFactor;
-//   return this.previousScale;
-// }
 private smoothScale(newScale: number): number {
   const settings = this.getPerformanceSettings();
   
@@ -726,24 +721,6 @@ private smoothScale(newScale: number): number {
   
   return this.previousScale;
 }
-// 6. SKIP FRAMES POUR MOBILE
-private frameSkipCounter = 0;
-// private shouldSkipFrame(): boolean {
-//   const settings = this.getPerformanceSettings();
-//   if (settings.skipFrames === 0) return false;
-  
-//   this.frameSkipCounter++;
-//   if (this.frameSkipCounter >= settings.skipFrames) {
-//     this.frameSkipCounter = 0;
-//     return false; // Traiter cette frame
-//   }
-//   return true; // Sauter cette frame
-// }
-private shouldSkipFrame(): boolean {
-  // Désactiver complètement le skip frames pour éviter la latence
-  return false;
-}
-
 // 7. LIMITATION FPS POUR MOBILE
 private lastFrameTime = 0;
 // 3. Conversion précise des coordonnées

@@ -7,6 +7,19 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Input } from '@angular/core';
 import { Glasses } from '../classes/glasses';
 import { CommonModule } from '@angular/common';
+interface FaceGeometry {
+  eyeCenter: THREE.Vector3;
+  eyeDistance: number;
+  faceWidth: number;
+  faceHeight: number;
+  faceAngle: number;
+  noseBridgePosition: THREE.Vector3;
+  points: any;
+  quality: number;
+  adaptiveScale: number;
+  isPartialImage?: boolean; // Nouveau champ
+}
+
 @Component({
   selector: 'app-importer-image',
   imports: [CommonModule],
@@ -114,90 +127,6 @@ export class ImporterImageComponent {
     this.isDomReady = true;
     this.cdr.detectChanges();
   } 
-  private calculateDisplayDimensions(naturalWidth: number, naturalHeight: number): {width: number, height: number} {
-    console.log('Dimensions originales:', `${naturalWidth}x${naturalHeight}`);
-    
-    // Calculer le ratio pour maintenir les proportions
-    const widthRatio = this.MAX_DISPLAY_WIDTH / naturalWidth;
-    const heightRatio = this.MAX_DISPLAY_HEIGHT / naturalHeight;
-    
-    // Utiliser le plus petit ratio pour que l'image rentre dans les limites
-    const ratio = Math.min(widthRatio, heightRatio);
-    
-    let displayWidth = naturalWidth * ratio;
-    let displayHeight = naturalHeight * ratio;
-    
-    // S'assurer que les dimensions ne sont pas trop petites
-    if (displayWidth < this.MIN_DISPLAY_WIDTH) {
-      const minRatio = this.MIN_DISPLAY_WIDTH / naturalWidth;
-      displayWidth = this.MIN_DISPLAY_WIDTH;
-      displayHeight = naturalHeight * minRatio;
-    }
-    
-    if (displayHeight < this.MIN_DISPLAY_HEIGHT) {
-      const minRatio = this.MIN_DISPLAY_HEIGHT / naturalHeight;
-      displayHeight = this.MIN_DISPLAY_HEIGHT;
-      displayWidth = naturalWidth * minRatio;
-    }
-    
-    // Arrondir les valeurs
-    displayWidth = Math.round(displayWidth);
-    displayHeight = Math.round(displayHeight);
-    
-    const finalRatio = displayWidth / naturalWidth;
-    
-    console.log('Redimensionnement calculé:', {
-      natural: `${naturalWidth}x${naturalHeight}`,
-      display: `${displayWidth}x${displayHeight}`,
-      ratio: finalRatio.toFixed(3),
-      reduction: `${(100 - finalRatio * 100).toFixed(1)}%`
-    });
-    
-    return {
-      width: displayWidth,
-      height: displayHeight
-    };
-  }
-  onImageDisplayed(): void {
-    const img = this.uploadedImage?.nativeElement;
-    if (!img || !img.complete) return;
-    
-    // Stocker les dimensions originales
-    this.imageOriginalWidth = img.naturalWidth;
-    this.imageOriginalHeight = img.naturalHeight;
-    
-    // Calculer les dimensions d'affichage
-    const dimensions = this.calculateDisplayDimensions(img.naturalWidth, img.naturalHeight);
-    this.imageDisplayWidth = dimensions.width;
-    this.imageDisplayHeight = dimensions.height;
-    
-    // Calculer les statistiques de redimensionnement
-    const originalSize = (img.naturalWidth * img.naturalHeight) / (1024 * 1024); // en MP
-    const displaySize = (dimensions.width * dimensions.height) / (1024 * 1024); // en MP
-    const reductionRatio = (dimensions.width / img.naturalWidth);
-    
-    console.log('📏 Redimensionnement appliqué:', {
-      original: {
-        dimensions: `${img.naturalWidth}x${img.naturalHeight}`,
-        size: `${originalSize.toFixed(2)} MP`
-      },
-      display: {
-        dimensions: `${this.imageDisplayWidth}x${this.imageDisplayHeight}`,
-        size: `${displaySize.toFixed(2)} MP`
-      },
-      reduction: `${(100 - reductionRatio * 100).toFixed(1)}%`,
-      ratio: reductionRatio.toFixed(3)
-    });
-    
-    // Déclencher la détection des changements pour mettre à jour le template
-    this.cdr.detectChanges();
-    
-    // Lancer le traitement après mise à jour des dimensions
-    setTimeout(() => {
-      this.onImageLoaded();
-    }, 150); // Délai légèrement augmenté pour assurer la stabilité
-  }
-
   
   previewUrl: string | ArrayBuffer | null = null;
   fileName: string = '';
@@ -343,574 +272,1464 @@ private async waitForDOMElements(): Promise<boolean> {
     }
     this.cdr.detectChanges();
   }
-  private isDomReady = false;
-  private isProcessingImage = false;
-  async onImageLoaded() {
-    console.log('=== DÉBUT TRAITEMENT IMAGE ===');
-    if (this.isProcessingImage) {
-      console.log('⚠️ Traitement déjà en cours, ignorer...');
+    ////////////////////////////////
+// SYSTÈME DE DEBUG VISUEL COMPLET POUR LES LANDMARKS
+// 1. MÉTHODE PRINCIPALE DE DEBUG VISUEL
+private debugVisualizeLandmarks(landmarks: any[], canvas: HTMLCanvasElement, showAll: boolean = false) {
+  console.log('🎨 Début du debug visuel des landmarks');
+  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    console.error('❌ Impossible d\'obtenir le contexte 2D du canvas');
+    return;
+  }
+
+  // Effacer le canvas précédent
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Configuration du style
+  ctx.lineWidth = 2;
+  ctx.font = '12px Arial';
+  
+  if (showAll) {
+    // Afficher TOUS les landmarks (468 points)
+    this.drawAllLandmarks(ctx, landmarks);
+  } else {
+    // Afficher seulement les points critiques pour les lunettes
+    this.drawCriticalLandmarks(ctx, landmarks);
+  }
+  
+  // Dessiner les connexions entre les points importants
+  this.drawFaceStructure(ctx, landmarks);
+  
+  // Afficher les statistiques
+  this.drawLandmarkStats(ctx, landmarks);
+  
+  console.log('✅ Debug visuel terminé');
+}
+
+// 2. DESSINER TOUS LES LANDMARKS (MODE DEBUG COMPLET)
+private drawAllLandmarks(ctx: CanvasRenderingContext2D, landmarks: any[]) {
+  console.log('🔍 Affichage de tous les landmarks');
+  
+  landmarks.forEach((landmark, index) => {
+    if (!landmark || typeof landmark.x !== 'number') return;
+    
+    // Conversion vers les coordonnées du canvas
+    const x = landmark.x * this.imageDisplayWidth;
+    const y = landmark.y * this.imageDisplayHeight;
+    
+    // Couleur selon la région du visage
+    let color = this.getLandmarkColor(index);
+    
+    // Dessiner le point
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
+    
+    // Numéroter les points importants
+    if (this.isCriticalLandmark(index)) {
+      ctx.fillStyle = 'white';
+      ctx.fillText(index.toString(), x + 3, y - 3);
+    }
+  });
+}
+
+// 3. DESSINER SEULEMENT LES POINTS CRITIQUES POUR LES LUNETTES
+private drawCriticalLandmarks(ctx: CanvasRenderingContext2D, landmarks: any[]) {
+  console.log('👁️ Affichage des points critiques pour lunettes');
+  
+  // Points critiques avec leurs rôles
+  const criticalPoints = {
+    // Yeux
+    leftEyeOuter: { index: 33, color: '#00FF00', size: 8, label: 'L-Outer' },
+    rightEyeOuter: { index: 263, color: '#00FF00', size: 8, label: 'R-Outer' },
+    leftEyeInner: { index: 133, color: '#0080FF', size: 6, label: 'L-Inner' },
+    rightEyeInner: { index: 362, color: '#0080FF', size: 6, label: 'R-Inner' },
+    leftEyeTop: { index: 159, color: '#FF8000', size: 4, label: 'L-Top' },
+    leftEyeBottom: { index: 145, color: '#FF8000', size: 4, label: 'L-Bot' },
+    rightEyeTop: { index: 386, color: '#FF8000', size: 4, label: 'R-Top' },
+    rightEyeBottom: { index: 374, color: '#FF8000', size: 4, label: 'R-Bot' },
+    
+    // Nez et structure
+    noseBridge: { index: 168, color: '#FF00FF', size: 8, label: 'Nose' },
+    noseTop: { index: 6, color: '#FF00FF', size: 4, label: 'N-Top' },
+    noseBottom: { index: 2, color: '#FF00FF', size: 4, label: 'N-Bot' },
+    
+    // Points de référence
+    forehead: { index: 10, color: '#FFFF00', size: 6, label: 'Forehead' },
+    chin: { index: 152, color: '#FFFF00', size: 6, label: 'Chin' },
+    
+    // Tempes (pour la largeur des lunettes)
+    leftTemple: { index: 234, color: '#FF0080', size: 6, label: 'L-Temple' },
+    rightTemple: { index: 454, color: '#FF0080', size: 6, label: 'R-Temple' }
+  };
+
+  Object.entries(criticalPoints).forEach(([name, config]) => {
+    const landmark = landmarks[config.index];
+    if (!landmark || typeof landmark.x !== 'number') {
+      console.warn(`⚠️ Point ${name} (${config.index}) manquant`);
       return;
     }
-    this.isProcessingImage = true;
     
-    try {
-      // Attendre que les éléments DOM soient disponibles
-      const domReady = await this.waitForDOMElements();
-      if (!domReady) {
-        console.error('Éléments DOM non disponibles');
-        return;
-      }
-  
-      const img: HTMLImageElement = this.uploadedImage.nativeElement;
-      const canvas: HTMLCanvasElement = this.overlayCanvasImage.nativeElement;
-  
-      // IMPORTANT: Utiliser les dimensions d'affichage pour le canvas
-      // mais les dimensions naturelles pour la détection
-      canvas.width = this.imageDisplayWidth;
-      canvas.height = this.imageDisplayHeight;
-      
-      console.log(`Synchronisation réussie:`, {
-        imageNatural: `${img.naturalWidth}x${img.naturalHeight}`,
-        imageDisplay: `${this.imageDisplayWidth}x${this.imageDisplayHeight}`,
-        canvasSize: `${canvas.width}x${canvas.height}`
-      });
-  
-      // Détection sur l'image naturelle
-      const landmarks = await this.faceMeshService.detectOnImage(img);
-  
-      if (!landmarks || landmarks.length < 468) {
-        console.error('Aucun visage détecté ou landmarks insuffisants:', landmarks?.length || 0);
-        return;
-      }
-      
+    const x = landmark.x * this.imageDisplayWidth;
+    const y = landmark.y * this.imageDisplayHeight;
+    
+    // Dessiner le point
+    ctx.fillStyle = config.color;
+    ctx.beginPath();
+    ctx.arc(x, y, config.size, 0, 2 * Math.PI);
+    ctx.fill();
+    
+    // Contour noir pour meilleure visibilité
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Label avec fond
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(x + 8, y - 15, ctx.measureText(config.label).width + 4, 12);
+    ctx.fillStyle = 'white';
+    ctx.font = '10px Arial';
+    ctx.fillText(config.label, x + 10, y - 6);
+    
+    // Coordonnées détaillées pour debug
+    const coordText = `(${landmark.x.toFixed(3)}, ${landmark.y.toFixed(3)})`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillRect(x + 8, y + 2, ctx.measureText(coordText).width + 4, 12);
+    ctx.fillStyle = 'black';
+    ctx.font = '9px monospace';
+    ctx.fillText(coordText, x + 10, y + 12);
+  });
+}
 
-      console.log(`✓ Landmarks détectés: ${landmarks.length}`);
+// 4. DESSINER LA STRUCTURE DU VISAGE (CONNEXIONS)
+private drawFaceStructure(ctx: CanvasRenderingContext2D, landmarks: any[]) {
+  console.log('🔗 Dessin des connexions faciales');
   
-      // Initialiser Three.js avec les dimensions d'affichage
-      await this.initThreeJSForImage(this.imageDisplayWidth, this.imageDisplayHeight);
-      console.log('✓ Three.js initialisé');
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
   
-      // Charger le modèle 3D
-      if (!this.glasses3DImage && this.glass) {
-        await this.load3DModelForImage();
-        console.log('✓ Modèle 3D chargé');
+  // Connexions importantes pour les lunettes
+  const connections = [
+    // Ligne des yeux
+    [33, 133],   // Œil gauche (outer -> inner)
+    [362, 263],  // Œil droit (inner -> outer)
+    [133, 362],  // Bridge entre les yeux
+    
+    // Structure nasale
+    [168, 6],    // Bridge vers haut du nez
+    [6, 2],      // Haut vers bas du nez
+    
+    // Ligne de référence horizontale
+    [234, 454],  // Temple à temple
+    
+    // Axe vertical du visage
+    [10, 152],   // Front vers menton
+  ];
+  
+  connections.forEach(([start, end]) => {
+    const startPoint = landmarks[start];
+    const endPoint = landmarks[end];
+    
+    if (startPoint && endPoint && 
+        typeof startPoint.x === 'number' && typeof endPoint.x === 'number') {
+      
+      const x1 = startPoint.x * this.imageDisplayWidth;
+      const y1 = startPoint.y * this.imageDisplayHeight;
+      const x2 = endPoint.x * this.imageDisplayWidth;
+      const y2 = endPoint.y * this.imageDisplayHeight;
+      
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  });
+  
+  // Dessiner les centres calculés des yeux
+  this.drawCalculatedEyeCenters(ctx, landmarks);
+}
+
+// 5. DESSINER LES CENTRES CALCULÉS DES YEUX
+private drawCalculatedEyeCenters(ctx: CanvasRenderingContext2D, landmarks: any[]) {
+  // Recalculer les centres comme dans votre code principal
+  const leftEyeCenter = this.calculateEyeCenterForDebug('left', landmarks);
+  const rightEyeCenter = this.calculateEyeCenterForDebug('right', landmarks);
+  
+  if (leftEyeCenter && rightEyeCenter) {
+    // Centre œil gauche
+    ctx.fillStyle = '#0000FF';
+    ctx.beginPath();
+    ctx.arc(leftEyeCenter.x, leftEyeCenter.y, 10, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Centre œil droit
+    ctx.fillStyle = '#FFFF00';
+    ctx.beginPath();
+    ctx.arc(rightEyeCenter.x, rightEyeCenter.y, 10, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Ligne entre les centres
+    ctx.strokeStyle = '#FF0000';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(leftEyeCenter.x, leftEyeCenter.y);
+    ctx.lineTo(rightEyeCenter.x, rightEyeCenter.y);
+    ctx.stroke();
+    
+    // Distance entre les yeux
+    const distance = Math.sqrt(
+      Math.pow(rightEyeCenter.x - leftEyeCenter.x, 2) + 
+      Math.pow(rightEyeCenter.y - leftEyeCenter.y, 2)
+    );
+    
+    const midX = (leftEyeCenter.x + rightEyeCenter.x) / 2;
+    const midY = (leftEyeCenter.y + rightEyeCenter.y) / 2;
+    
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+    ctx.fillRect(midX - 30, midY - 25, 60, 20);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${distance.toFixed(1)}px`, midX, midY - 10);
+    ctx.textAlign = 'left';
+  }
+}
+
+// 6. MÉTHODE AUXILIAIRE POUR CALCULER LES CENTRES (VERSION DEBUG)
+private calculateEyeCenterForDebug(eye: 'left' | 'right', landmarks: any[]): {x: number, y: number} | null {
+  const indices = eye === 'left' ? 
+    { outer: 33, inner: 133, top: 159, bottom: 145 } :
+    { outer: 263, inner: 362, top: 386, bottom: 374 };
+  
+  const points = {
+    outer: landmarks[indices.outer],
+    inner: landmarks[indices.inner],
+    top: landmarks[indices.top],
+    bottom: landmarks[indices.bottom]
+  };
+  
+  if (!points.outer || !points.inner) return null;
+  
+  const centerX = ((points.outer.x + points.inner.x) / 2) * this.imageDisplayWidth;
+  const centerY = ((points.outer.y + points.inner.y) / 2) * this.imageDisplayHeight;
+  
+  return { x: centerX, y: centerY };
+}
+
+// 7. AFFICHER LES STATISTIQUES
+private drawLandmarkStats(ctx: CanvasRenderingContext2D, landmarks: any[]) {
+  const stats = this.calculateLandmarkStatistics(landmarks);
+  
+  // Fond pour les stats
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(10, 10, 250, 120);
+  
+  // Texte des statistiques
+  ctx.fillStyle = 'white';
+  ctx.font = '12px monospace';
+  
+  const statsText = [
+    `Landmarks détectés: ${stats.totalCount}/468`,
+    `Points valides: ${stats.validCount} (${stats.validPercentage.toFixed(1)}%)`,
+    `Distance yeux: ${stats.eyeDistance.toFixed(1)}px`,
+    `Qualité détection: ${stats.quality}`,
+    `Symétrie faciale: ${stats.symmetry.toFixed(3)}`,
+    `Bounds check: ${stats.inBounds ? '✓' : '✗'}`,
+    `Z-depth range: ${stats.depthRange.min.toFixed(3)} → ${stats.depthRange.max.toFixed(3)}`
+  ];
+  
+  statsText.forEach((text, index) => {
+    ctx.fillText(text, 15, 30 + index * 15);
+  });
+}
+
+// 8. CALCULER LES STATISTIQUES DES LANDMARKS
+private calculateLandmarkStatistics(landmarks: any[]) {
+  let validCount = 0;
+  let inBoundsCount = 0;
+  let zValues: number[] = [];
+  
+  landmarks.forEach(landmark => {
+    if (landmark && typeof landmark.x === 'number' && 
+        typeof landmark.y === 'number' && typeof landmark.z === 'number') {
+      validCount++;
+      zValues.push(landmark.z);
+      
+      if (landmark.x >= 0 && landmark.x <= 1 && 
+          landmark.y >= 0 && landmark.y <= 1) {
+        inBoundsCount++;
       }
+    }
+  });
   
-      if (!this.glasses3DImage) {
-        console.error('Aucun modèle 3D de lunettes disponible');
-        return;
-      }
+  // Calculer la distance des yeux et la symétrie
+  const leftEye = landmarks[133]; // Inner corner left
+  const rightEye = landmarks[362]; // Inner corner right
+  let eyeDistance = 0;
+  let symmetry = 0;
   
-      // Traitement avec conversion des coordonnées
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await this.processGlassesPositioningWithScaling(landmarks, img.naturalWidth, img.naturalHeight);
-      console.log('=== TRAITEMENT TERMINÉ ===');
+  if (leftEye && rightEye) {
+    eyeDistance = Math.sqrt(
+      Math.pow((rightEye.x - leftEye.x) * this.imageDisplayWidth, 2) +
+      Math.pow((rightEye.y - leftEye.y) * this.imageDisplayHeight, 2)
+    );
+    
+    symmetry = Math.abs(Math.abs(leftEye.x - 0.5) - Math.abs(rightEye.x - 0.5));
+  }
   
-    } catch (error) {
-      console.error('Erreur lors du traitement de l\'image:', error);
-    } finally {
-      this.isProcessingImage = false;
+  const validPercentage = (validCount / landmarks.length) * 100;
+  const quality = validPercentage > 95 ? 'Excellente' :
+                 validPercentage > 85 ? 'Bonne' :
+                 validPercentage > 70 ? 'Moyenne' : 'Faible';
+  
+  return {
+    totalCount: landmarks.length,
+    validCount,
+    validPercentage,
+    inBounds: inBoundsCount === validCount,
+    eyeDistance,
+    symmetry,
+    quality,
+    depthRange: {
+      min: Math.min(...zValues),
+      max: Math.max(...zValues)
+    }
+  };
+}
+
+// 9. MÉTHODES UTILITAIRES
+private getLandmarkColor(index: number): string {
+  // Couleurs par région faciale
+  if (index >= 0 && index <= 16) return '#FF6B6B';      // Contour visage
+  if (index >= 17 && index <= 21) return '#4ECDC4';     // Sourcil droit
+  if (index >= 22 && index <= 26) return '#45B7D1';     // Sourcil gauche
+  if (index >= 27 && index <= 35) return '#96CEB4';     // Nez
+  if (index >= 36 && index <= 47) return '#FFEAA7';     // Œil droit
+  if (index >= 48 && index <= 67) return '#DDA0DD';     // Lèvres
+  if (index >= 68 && index <= 83) return '#98D8C8';     // Lèvres intérieures
+  return '#F7DC6F'; // Autres points
+}
+debugMode: boolean = false;
+showAllLandmarks: boolean = false;
+private isCriticalLandmark(index: number): boolean {
+  const criticalIndices = [33, 263, 133, 362, 159, 145, 386, 374, 168, 10, 152, 234, 454];
+  return criticalIndices.includes(index);
+}
+
+// 10. MÉTHODES D'ACTIVATION DU DEBUG
+public enableLandmarkDebug(showAll: boolean = false) {
+  console.log('🎨 Activation du debug visuel des landmarks');
+  this.debugMode = true;
+  this.showAllLandmarks = showAll;
+}
+
+public disableLandmarkDebug() {
+  console.log('🎨 Désactivation du debug visuel');
+  this.debugMode = false;
+  // Nettoyer le canvas
+  if (this.overlayCanvasImage?.nativeElement) {
+    const ctx = this.overlayCanvasImage.nativeElement.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, this.overlayCanvasImage.nativeElement.width, this.overlayCanvasImage.nativeElement.height);
     }
   }
-/////////////////////////////////
-private extractFaceGeometry(landmarks: any[], imageWidth: number, imageHeight: number) {
-  console.log('🔍 Extraction CORRIGÉE de la géométrie du visage');
+}
+////////////////////////////////
+ private isDomReady = false;
+  private isProcessingImage = false;
+  private calculateDisplayDimensions(naturalWidth: number, naturalHeight: number): {width: number, height: number} {
+    console.log('Dimensions originales:', `${naturalWidth}x${naturalHeight}`);
+    
+    // Calculer le ratio pour maintenir les proportions
+    const widthRatio = this.MAX_DISPLAY_WIDTH / naturalWidth;
+    const heightRatio = this.MAX_DISPLAY_HEIGHT / naturalHeight;
+    
+    // Utiliser le plus petit ratio pour que l'image rentre dans les limites
+    const ratio = Math.min(widthRatio, heightRatio);
+    
+    let displayWidth = naturalWidth * ratio;
+    let displayHeight = naturalHeight * ratio;
+    
+    // S'assurer que les dimensions ne sont pas trop petites
+    if (displayWidth < this.MIN_DISPLAY_WIDTH) {
+      const minRatio = this.MIN_DISPLAY_WIDTH / naturalWidth;
+      displayWidth = this.MIN_DISPLAY_WIDTH;
+      displayHeight = naturalHeight * minRatio;
+    }
+    
+    if (displayHeight < this.MIN_DISPLAY_HEIGHT) {
+      const minRatio = this.MIN_DISPLAY_HEIGHT / naturalHeight;
+      displayHeight = this.MIN_DISPLAY_HEIGHT;
+      displayWidth = naturalWidth * minRatio;
+    }
+    
+    // Arrondir les valeurs
+    displayWidth = Math.round(displayWidth);
+    displayHeight = Math.round(displayHeight);
+    
+    const finalRatio = displayWidth / naturalWidth;
+    
+    console.log('Redimensionnement calculé:', {
+      natural: `${naturalWidth}x${naturalHeight}`,
+      display: `${displayWidth}x${displayHeight}`,
+      ratio: finalRatio.toFixed(3),
+      reduction: `${(100 - finalRatio * 100).toFixed(1)}%`
+    });
+    
+    return {
+      width: displayWidth,
+      height: displayHeight
+    };
+  }
+  onImageDisplayed(): void {
+    const img = this.uploadedImage?.nativeElement;
+    if (!img || !img.complete) return;
+    
+    // Stocker les dimensions originales
+    this.imageOriginalWidth = img.naturalWidth;
+    this.imageOriginalHeight = img.naturalHeight;
+    
+    // Calculer les dimensions d'affichage
+    const dimensions = this.calculateDisplayDimensions(img.naturalWidth, img.naturalHeight);
+    this.imageDisplayWidth = dimensions.width;
+    this.imageDisplayHeight = dimensions.height;
+    
+    // Calculer les statistiques de redimensionnement
+    const originalSize = (img.naturalWidth * img.naturalHeight) / (1024 * 1024); // en MP
+    const displaySize = (dimensions.width * dimensions.height) / (1024 * 1024); // en MP
+    const reductionRatio = (dimensions.width / img.naturalWidth);
+    
+    console.log('📏 Redimensionnement appliqué:', {
+      original: {
+        dimensions: `${img.naturalWidth}x${img.naturalHeight}`,
+        size: `${originalSize.toFixed(2)} MP`
+      },
+      display: {
+        dimensions: `${this.imageDisplayWidth}x${this.imageDisplayHeight}`,
+        size: `${displaySize.toFixed(2)} MP`
+      },
+      reduction: `${(100 - reductionRatio * 100).toFixed(1)}%`,
+      ratio: reductionRatio.toFixed(3)
+    });
+    
+    // Déclencher la détection des changements pour mettre à jour le template
+    this.cdr.detectChanges();
+    
+    // Lancer le traitement après mise à jour des dimensions
+    setTimeout(() => {
+      this.onImageLoaded();
+    }, 150); // Délai légèrement augmenté pour assurer la stabilité
+  }
+//   // ✅ Nouvelle méthode pour créer une image redimensionnée pour MediaPipe
+// private async createResizedImageForMediaPipe(originalImg: HTMLImageElement): Promise<HTMLCanvasElement> {
+//   console.log('🖼️ Création image redimensionnée pour MediaPipe');
+  
+//   // Créer un canvas temporaire avec les dimensions d'affichage
+//   const tempCanvas = document.createElement('canvas');
+//   tempCanvas.width = this.imageDisplayWidth;
+//   tempCanvas.height = this.imageDisplayHeight;
+  
+//   const ctx = tempCanvas.getContext('2d');
+//   if (!ctx) {
+//     throw new Error('Impossible de créer le contexte canvas');
+//   }
+  
+//   // Dessiner l'image redimensionnée
+//   ctx.drawImage(
+//     originalImg,
+//     0, 0, originalImg.naturalWidth, originalImg.naturalHeight,  // Source
+//     0, 0, this.imageDisplayWidth, this.imageDisplayHeight       // Destination
+//   );
+  
+//   console.log('✅ Image redimensionnée créée:', `${tempCanvas.width}x${tempCanvas.height}`);
+  
+//   return tempCanvas;
+// }
+//   async onImageLoaded() {
+//   console.log('=== DÉBUT TRAITEMENT IMAGE ===');
+//   if (this.isProcessingImage) {
+//     console.log('⚠️ Traitement déjà en cours, ignorer...');
+//     return;
+//   }
+//   this.isProcessingImage = true;
+  
+//   try {
+//     const domReady = await this.waitForDOMElements();
+//     if (!domReady) {
+//       console.error('Éléments DOM non disponibles');
+//       return;
+//     }
+
+//     const img: HTMLImageElement = this.uploadedImage.nativeElement;
+//     const canvas: HTMLCanvasElement = this.overlayCanvasImage.nativeElement;
+    
+//     canvas.width = this.imageDisplayWidth;
+//     canvas.height = this.imageDisplayHeight;
+    
+//     // ✅ SOLUTION 1: Créer une image redimensionnée pour MediaPipe
+//     const resizedImage = await this.createResizedImageForMediaPipe(img);
+    
+//     console.log(`Synchronisation corrigée:`, {
+//       imageNatural: `${img.naturalWidth}x${img.naturalHeight}`,
+//       imageDisplay: `${this.imageDisplayWidth}x${this.imageDisplayHeight}`,
+//       mediaPipeImage: `${resizedImage.width}x${resizedImage.height}`,
+//       canvasSize: `${canvas.width}x${canvas.height}`
+//     });
+    
+//     // ✅ Détection sur l'image redimensionnée (cohérente avec l'affichage)
+//     const landmarks = await this.faceMeshService.detectOnImage(resizedImage);
+    
+//     if (!landmarks || landmarks.length < 468) {
+//       console.error('Aucun visage détecté ou landmarks insuffisants:', landmarks?.length || 0);
+//       return;
+//     }
+
+//     console.log(`✓ Landmarks détectés: ${landmarks.length}`);
+
+//     // Initialiser Three.js avec les dimensions d'affichage
+//     await this.initThreeJSForImage(this.imageDisplayWidth, this.imageDisplayHeight);
+//     console.log('✓ Three.js initialisé');
+
+//     // Charger le modèle 3D
+//     if (!this.glasses3DImage && this.glass) {
+//       await this.load3DModelForImage();
+//       console.log('✓ Modèle 3D chargé');
+//     }
+
+//     if (!this.glasses3DImage) {
+//       console.error('Aucun modèle 3D de lunettes disponible');
+//       return;
+//     }
+
+//     // ✅ Traitement avec dimensions cohérentes
+//     await new Promise(resolve => setTimeout(resolve, 100));
+//     await this.processGlassesPositioningWithScaling(landmarks, this.imageDisplayWidth, this.imageDisplayHeight);
+    
+//     console.log('=== TRAITEMENT TERMINÉ ===');
+
+//   } catch (error) {
+//     console.error('Erreur lors du traitement de l\'image:', error);
+//   } finally {
+//     this.isProcessingImage = false;
+//   }
+// }
+// ✅ Méthode optimisée pour créer une image redimensionnée pour MediaPipe
+private async createResizedImageForMediaPipe(originalImg: HTMLImageElement): Promise<HTMLImageElement> {
+  console.log('🖼️ Création image redimensionnée optimisée pour MediaPipe');
+  
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = this.imageDisplayWidth;
+  tempCanvas.height = this.imageDisplayHeight;
+  
+  const ctx = tempCanvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Impossible de créer le contexte canvas');
+  }
+  
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  
+  ctx.drawImage(
+    originalImg,
+    0, 0, originalImg.naturalWidth, originalImg.naturalHeight,
+    0, 0, this.imageDisplayWidth, this.imageDisplayHeight
+  );
+  
+  // Convertir en Blob pour une meilleure performance
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    tempCanvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Échec de la conversion en Blob'));
+        return;
+      }
+      
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      
+      img.onload = () => {
+        // Nettoyer l'URL après utilisation
+        URL.revokeObjectURL(url);
+        console.log('✅ Image redimensionnée créée (optimisée):', `${img.width}x${img.height}`);
+        resolve(img);
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Erreur lors du chargement de l\'image depuis le Blob'));
+      };
+      
+      img.src = url;
+    }, 'image/png', 0.95); // Qualité de compression
+  });
+}
+
+// ✅ Méthode pour calculer les facteurs d'échelle
+private calculateScaleFactors(originalImg: HTMLImageElement): { scaleX: number, scaleY: number } {
+  const scaleX = this.imageDisplayWidth / originalImg.naturalWidth;
+  const scaleY = this.imageDisplayHeight / originalImg.naturalHeight;
+  
+  console.log('📏 Facteurs d\'échelle calculés:', { scaleX, scaleY });
+  
+  return { scaleX, scaleY };
+}
+
+// ✅ Méthode pour valider les landmarks
+private validateLandmarks(landmarks: any[]): boolean {
+  if (!landmarks || landmarks.length < 468) {
+    console.error(`❌ Landmarks insuffisants: ${landmarks?.length || 0}/468 requis`);
+    return false;
+  }
+  
+  // Vérifier que les landmarks sont dans les bonnes plages
+  const invalidLandmarks = landmarks.filter(landmark => 
+    landmark.x < 0 || landmark.x > 1 || 
+    landmark.y < 0 || landmark.y > 1
+  );
+  
+  if (invalidLandmarks.length > 0) {
+    console.warn(`⚠️ ${invalidLandmarks.length} landmarks hors limites détectés`);
+  }
+  
+  return true;
+}
+
+// ✅ Méthode principale améliorée
+async onImageLoaded(): Promise<void> {
+  console.log('=== DÉBUT TRAITEMENT IMAGE ===');
+  
+  if (this.isProcessingImage) {
+    console.log('⚠️ Traitement déjà en cours, ignorer...');
+    return;
+  }
+  
+  this.isProcessingImage = true;
+  
+  try {
+    // Attendre que le DOM soit prêt
+    const domReady = await this.waitForDOMElements();
+    if (!domReady) {
+      throw new Error('Éléments DOM non disponibles');
+    }
+
+    const img: HTMLImageElement = this.uploadedImage.nativeElement;
+    const canvas: HTMLCanvasElement = this.overlayCanvasImage.nativeElement;
+    
+    // Vérifier que l'image est chargée
+    if (!img.complete || img.naturalWidth === 0) {
+      throw new Error('Image non chargée correctement');
+    }
+    
+    // Configuration du canvas
+    canvas.width = this.imageDisplayWidth;
+    canvas.height = this.imageDisplayHeight;
+    
+    // Calculer les facteurs d'échelle pour référence
+    const scaleFactors = this.calculateScaleFactors(img);
+    
+    // Créer l'image redimensionnée pour MediaPipe
+    const resizedImage = await this.createResizedImageForMediaPipe(img);
+    
+    console.log(`📊 Synchronisation des dimensions:`, {
+      imageNatural: `${img.naturalWidth}x${img.naturalHeight}`,
+      imageDisplay: `${this.imageDisplayWidth}x${this.imageDisplayHeight}`,
+      mediaPipeInput: `${resizedImage.width}x${resizedImage.height}`,
+      canvasOutput: `${canvas.width}x${canvas.height}`,
+      scaleFactors
+    });
+    
+    // Détection sur l'image redimensionnée
+    console.log('🔍 Début détection MediaPipe...');
+    const landmarks = await this.faceMeshService.detectOnImage(resizedImage);
+    console.log("resizedImage.width", resizedImage.width);
+    console.log("resizedImage.height", resizedImage.height);
+    // Validation des landmarks
+    if (!this.validateLandmarks(landmarks)) {
+      throw new Error('Validation des landmarks échouée');
+    }
+    //this.drawCriticalLandmarks(canvas.getContext('2d')!, landmarks);
+    console.log(`✅ ${landmarks.length} landmarks détectés avec succès`);
+
+    // Initialisation de Three.js
+    console.log('🎮 Initialisation Three.js...');
+    await this.initThreeJSForImage(this.imageDisplayWidth, this.imageDisplayHeight);
+    
+    // Chargement du modèle 3D si nécessaire
+    if (!this.glasses3DImage && this.glass) {
+      console.log('📦 Chargement du modèle 3D...');
+      await this.load3DModelForImage();
+    }
+
+    if (!this.glasses3DImage) {
+      throw new Error('Modèle 3D des lunettes non disponible');
+    }
+
+    // Traitement du positionnement des lunettes
+    console.log('🕶️ Positionnement des lunettes...');
+    await this.processGlassesPositioningWithScaling(
+      landmarks, 
+      this.imageDisplayWidth, 
+      this.imageDisplayHeight
+    );
+    
+    console.log('🎉 === TRAITEMENT TERMINÉ AVEC SUCCÈS ===');
+
+  } catch (error) {
+    console.error('❌ Erreur lors du traitement de l\'image:', error);  
+  } finally {
+    this.isProcessingImage = false;
+    console.log('🔓 Verrou de traitement libéré');
+  }
+}
+////////////////////////////
+private calculateFaceDimensionsFromEyes(points: any, eyeDistance: number): {
+  estimatedFaceWidth: number,
+  estimatedFaceHeight: number,
+  confidence: number,
+  isPartialImage: boolean
+} {
+  let faceWidth = 0;
+  let faceHeight = 0;
+  let confidence = 0;
+  let isPartialImage = false;
+
+  // TENTATIVE 1: Utiliser les bords du visage s'ils sont disponibles
+  if (!this.isInvalidPoint(points.leftFaceEdge) && !this.isInvalidPoint(points.rightFaceEdge)) {
+    faceWidth = points.leftFaceEdge.distanceTo(points.rightFaceEdge);
+    confidence += 40;
+    console.log('✅ Largeur du visage détectée via les bords');
+  } else {
+    // ESTIMATION basée sur la distance des yeux (proportion anatomique)
+    faceWidth = eyeDistance * 2.2; // Ratio moyen face/yeux
+    isPartialImage = true;
+    confidence += 20;
+    console.log('📏 Largeur du visage estimée via les yeux');
+  }
+
+  // TENTATIVE 2: Utiliser front/menton s'ils sont disponibles
+  if (!this.isInvalidPoint(points.forehead) && !this.isInvalidPoint(points.chin)) {
+    faceHeight = points.forehead.distanceTo(points.chin);
+    confidence += 40;
+    console.log('✅ Hauteur du visage détectée via front/menton');
+  } else {
+    // ESTIMATION basée sur la largeur calculée (proportion anatomique)
+    faceHeight = faceWidth * 1.3; // Ratio moyen hauteur/largeur
+    isPartialImage = true;
+    confidence += 20;
+    console.log('📏 Hauteur du visage estimée via proportions');
+  }
+
+  // VALIDATION ET AJUSTEMENT
+  const minFaceSize = eyeDistance * 1.5;
+  const maxFaceSize = eyeDistance * 4;
+  
+  faceWidth = Math.max(minFaceSize, Math.min(maxFaceSize, faceWidth));
+  faceHeight = Math.max(minFaceSize, Math.min(maxFaceSize, faceHeight));
+
+  return {
+    estimatedFaceWidth: faceWidth,
+    estimatedFaceHeight: faceHeight,
+    confidence: Math.min(100, confidence),
+    isPartialImage
+  };
+}
+private extractFaceGeometry(landmarks: any[], imageWidth: number, imageHeight: number): FaceGeometry | null {
+  console.log('🔍 Extraction géométrique adaptée aux photos partielles');
   
   if (!landmarks || landmarks.length < 468) {
     throw new Error(`Landmarks insuffisants: ${landmarks?.length || 0}/468`);
   }
 
-  const getSafePoint = (index: number, fallbackPoint?: THREE.Vector3): THREE.Vector3 => {
+  const getSafePoint = (index: number): THREE.Vector3 => {
     const l = landmarks[index];
     if (!l || typeof l.x !== 'number' || typeof l.y !== 'number' || typeof l.z !== 'number') {
       console.warn(`⚠️ Landmark ${index} invalide:`, l);
-      return fallbackPoint || new THREE.Vector3(0, 0, 0);
+      return new THREE.Vector3(0, 0, 0);
+    }
+    // Conversion X : de [0,1] vers [-imageWidth/2, +imageWidth/2]
+    const x3D = (l.x * imageWidth) - (imageWidth / 2);
+    
+    // Conversion Y : de [0,1] vers [+imageHeight/2, -imageHeight/2] (Y inversé pour Three.js)
+    const y3D = (imageHeight / 2) - (l.y * imageHeight);
+    
+    // Conversion Z : normalisation basée sur la taille de l'image
+    const z3D = l.z * Math.min(imageWidth, imageHeight) * 0.1;
+    
+    // Validation des limites
+    const maxX = imageWidth / 2;
+    const maxY = imageHeight / 2;
+    
+    // Debug pour vérifier la conversion
+    console.log(`Point ${index}: MediaPipe(${l.x.toFixed(3)}, ${l.y.toFixed(3)}) -> Three.js(${x3D.toFixed(1)}, ${y3D.toFixed(1)})`);
+    
+    if (Math.abs(x3D) > maxX || Math.abs(y3D) > maxY) {
+      console.warn(`⚠️ Point ${index} hors limites:`, {
+        calculated: `(${x3D.toFixed(1)}, ${y3D.toFixed(1)})`,
+        limits: `±${maxX}, ±${maxY}`,
+        original: `(${l.x.toFixed(3)}, ${l.y.toFixed(3)})`
+      });
+      
+      // Clamp les coordonnées dans les limites
+      const clampedX = Math.max(-maxX, Math.min(maxX, x3D));
+      const clampedY = Math.max(-maxY, Math.min(maxY, y3D));
+      
+      return new THREE.Vector3(clampedX, clampedY, z3D);
     }
     
-    return new THREE.Vector3(
-      (l.x - 0.5) * imageWidth,
-      -(l.y - 0.5) * imageHeight,
-      l.z * imageWidth * 0.1
-    );
+    return new THREE.Vector3(x3D, y3D, z3D);
   };
 
-  // 🎯 INDICES CORRECTS SELON MEDIAPIPE FACE MESH (VOTRE CONFIG ORIGINALE)
-  let points: any = {}; 
+  // POINTS CRITIQUES - Focus sur les yeux principalement
+  const points: any = {
+    // Yeux - Points essentiels
+    leftEyeOuter: getSafePoint(33),
+    rightEyeOuter: getSafePoint(263),
+    leftEyeInner: getSafePoint(133),
+    rightEyeInner: getSafePoint(362),
+    leftEyeTop: getSafePoint(159),
+    leftEyeBottom: getSafePoint(145),
+    rightEyeTop: getSafePoint(386),
+    rightEyeBottom: getSafePoint(374),
+    
+    // Points optionnels (peuvent être absents dans les crops)
+    noseBridge: getSafePoint(168),
+    noseTip: getSafePoint(1),
+    forehead: getSafePoint(10),
+    chin: getSafePoint(152),
+    leftFaceEdge: getSafePoint(234),
+    rightFaceEdge: getSafePoint(454),
+    leftTemple: getSafePoint(127),
+    rightTemple: getSafePoint(356)
+  };
+
+  // CALCUL ADAPTATIF DES CENTRES DES YEUX
+  points.leftEyeCenter = this.calculateAdaptiveEyeCenter('left', points);
+  points.rightEyeCenter = this.calculateAdaptiveEyeCenter('right', points);
   
-  // Points des yeux - INDICES MEDIAPIPE CORRECTS
-  points.leftEyeInner = getSafePoint(133);  // Coin interne œil gauche ✅
-  points.leftEyeOuter = getSafePoint(33);   // Coin externe œil gauche ✅
-  points.rightEyeInner = getSafePoint(362); // Coin interne œil droit ✅
-  points.rightEyeOuter = getSafePoint(263); // Coin externe œil droit ✅
-  
-  // Points centraux des yeux (paupières)
-  points.leftEyeTop = getSafePoint(159);    // Haut paupière gauche
-  points.leftEyeBottom = getSafePoint(145); // Bas paupière gauche
-  points.rightEyeTop = getSafePoint(386);   // Haut paupière droite
-  points.rightEyeBottom = getSafePoint(374);// Bas paupière droite
-  
-  // 🆕 POINTS ADDITIONNELS POUR CAS DIFFICILES UNIQUEMENT
-  // Points de sourcils pour visages souriants/yeux fermés
-  points.leftBrowInner = getSafePoint(70);  // Sourcil gauche interne
-  points.leftBrowOuter = getSafePoint(46);  // Sourcil gauche externe
-  points.rightBrowInner = getSafePoint(107);// Sourcil droit interne
-  points.rightBrowOuter = getSafePoint(276);// Sourcil droit externe
-  
-  // Points pour visages décentrés/petits
-  points.leftTemple = getSafePoint(21);     // Tempe gauche
-  points.rightTemple = getSafePoint(251);   // Tempe droite
-  
-  // Calcul des centres des yeux (VOTRE MÉTHODE ORIGINALE QUI MARCHAIT)
-  points.leftEyeCenter = new THREE.Vector3()
-    .addVectors(points.leftEyeInner, points.leftEyeOuter)
-    .add(points.leftEyeTop)
-    .add(points.leftEyeBottom)
-    .multiplyScalar(0.25); // Moyenne des 4 points
-  
-  points.rightEyeCenter = new THREE.Vector3()
-    .addVectors(points.rightEyeInner, points.rightEyeOuter)
-    .add(points.rightEyeTop)
-    .add(points.rightEyeBottom)
-    .multiplyScalar(0.25); // Moyenne des 4 points
-  
-  // 🆕 DÉTECTION DES CAS DIFFICILES ET CORRECTION CIBLÉE
-  const isProblematicCase = this.detectProblematicCase(points, imageWidth, imageHeight);
-  
-  if (isProblematicCase.needsCorrection) {
-    console.log('🔧 Cas difficile détecté:', isProblematicCase.issues.join(', '));
-    points = this.correctProblematicPoints(points, isProblematicCase, imageWidth, imageHeight);
+  // VALIDATION MINIMALE - Seuls les yeux sont requis
+  if (this.isInvalidPoint(points.leftEyeCenter) || this.isInvalidPoint(points.rightEyeCenter)) {
+    console.error('❌ Impossible de calculer les centres des yeux');
+    return null;
   }
   
-  // Centre entre les deux yeux (VOTRE CALCUL ORIGINAL)
+  // CALCULS BASÉS SUR LES YEUX UNIQUEMENT
   const eyeCenter = new THREE.Vector3()
     .addVectors(points.leftEyeCenter, points.rightEyeCenter)
     .multiplyScalar(0.5);
+  const eyeDistance = points.leftEyeCenter.distanceTo(points.rightEyeCenter);
+  
+  // CALCUL ADAPTATIF DE LA LARGEUR ET HAUTEUR DU VISAGE
+  const faceGeometry = this.calculateFaceDimensionsFromEyes(points, eyeDistance);
+  
+  // CALCUL DE L'ANGLE DU VISAGE
+  const faceAngle = this.calculatePreciseFaceAngle(points);
+  
+  // ÉCHELLE ADAPTATIVE BASÉE PRINCIPALEMENT SUR LA DISTANCE DES YEUX
+  const adaptiveScale = this.calculateEyeBasedScale(eyeDistance, faceGeometry);
+  
+  // VALIDATION MINIMALE
+  if (eyeDistance < 10 || eyeDistance > Math.min(imageWidth, imageHeight) * 0.8) {
+    console.error('❌ Distance entre les yeux invalide:', eyeDistance);
+    return null;
+  }
 
-  // Structure du nez - INDICES CORRECTS (VOTRE CONFIG ORIGINALE)
-  points.noseTip = getSafePoint(1);         // Bout du nez ✅
-  points.noseBridge = getSafePoint(168);    // Arête du nez ✅
-  points.noseTop = getSafePoint(6);         // Haut du nez ✅
-  points.noseLeft = getSafePoint(131);      // Narine gauche
-  points.noseRight = getSafePoint(360);     // Narine droite
+  const geometry: FaceGeometry = {
+    eyeCenter: eyeCenter,
+    eyeDistance: eyeDistance,
+    faceWidth: faceGeometry.estimatedFaceWidth,
+    faceHeight: faceGeometry.estimatedFaceHeight,
+    faceAngle: faceAngle,
+    noseBridgePosition: points.noseBridge,
+    points: points,
+    quality: this.assessPartialImageQuality(points, faceGeometry.confidence),
+    adaptiveScale: adaptiveScale,
+    isPartialImage: faceGeometry.isPartialImage
+  };
   
-  // Contour du visage - INDICES VÉRIFIÉS (VOTRE CONFIG ORIGINALE)
-  points.forehead = getSafePoint(10);       // Front ✅
-  points.chin = getSafePoint(175);          // Menton ✅
-  points.leftCheek = getSafePoint(116);     // Joue gauche ✅
-  points.rightCheek = getSafePoint(345);    // Joue droite ✅
+  return geometry;
+}
+// ÉCHELLE ADAPTÉE AUX PHOTOS PARTIELLES
+private calculateEyeBasedScale(eyeDistance: number, faceGeometry: any): number {
+  console.log('📏 Calcul d\'échelle basé principalement sur les yeux');
   
-  // Validation des points critiques (VOTRE LOGIQUE ORIGINALE)
-  const criticalPoints = [
-    'leftEyeCenter', 'rightEyeCenter', 'noseTip', 'noseBridge', 
-    'forehead', 'chin', 'leftCheek', 'rightCheek'
-  ];
+  // ÉCHELLE PRINCIPALE basée sur la distance inter-pupillaire
+  const averageIPD = 65; // Distance moyenne en pixels d'affichage
+  const baseScale = eyeDistance / averageIPD;
   
-  for (const pointName of criticalPoints) {
-    if (points[pointName] && points[pointName].equals(new THREE.Vector3(0, 0, 0))) {
-      console.warn(`⚠️ Point critique ${pointName} invalide, utilisation de fallback`);
-      // VOS FALLBACKS ORIGINAUX QUI MARCHAIENT
-      switch (pointName) {
-        case 'leftEyeCenter':
-          points[pointName] = eyeCenter.clone().add(new THREE.Vector3(-25, 0, 0));
-          break;
-        case 'rightEyeCenter':
-          points[pointName] = eyeCenter.clone().add(new THREE.Vector3(25, 0, 0));
-          break;
-        case 'noseTip':
-          points[pointName] = eyeCenter.clone().add(new THREE.Vector3(0, 30, 10));
-          break;
-        case 'noseBridge':
-          points[pointName] = eyeCenter.clone().add(new THREE.Vector3(0, 10, 5));
-          break;
+  // FACTEUR DE CORRECTION selon le type d'image
+  let correctionFactor = 1.0;
+  
+  if (faceGeometry.isPartialImage) {
+    // Pour les images partielles, on se base uniquement sur les yeux
+    console.log('🔍 Image partielle détectée - échelle conservative');
+    
+    // Légère réduction pour les crops serrés
+    correctionFactor = 0.95;
+    
+    // Ajustement selon la taille des yeux dans l'image
+    const eyeImageRatio = eyeDistance / Math.min(this.imageDisplayWidth, this.imageDisplayHeight);
+    
+    if (eyeImageRatio > 0.3) {
+      // Gros plan sur les yeux
+      correctionFactor *= 0.9;
+    } else if (eyeImageRatio < 0.15) {
+      // Yeux petits dans l'image
+      correctionFactor *= 1.1;
+    }
+  } else {
+    // Image complète - utiliser les méthodes avancées
+    const faceRatio = faceGeometry.estimatedFaceWidth / faceGeometry.estimatedFaceHeight;
+    
+    if (faceRatio > 0.85) {
+      correctionFactor = 1.05; // Visage large
+    } else if (faceRatio < 0.65) {
+      correctionFactor = 0.95; // Visage étroit
+    }
+  }
+  
+  // ÉCHELLE FINALE avec limites sécurisées
+  const finalScale = baseScale * correctionFactor;
+  const clampedScale = Math.max(0.5, Math.min(1.8, finalScale));
+  
+  console.log('📊 Analyse d\'échelle (photo partielle):', {
+    faceRatio: faceGeometry.estimatedFaceWidth / faceGeometry.estimatedFaceHeight,
+    eyeDistance: eyeDistance.toFixed(1),
+    baseScale: baseScale.toFixed(3),
+    correctionFactor: correctionFactor.toFixed(3),
+    finalScale: clampedScale.toFixed(3),
+    isPartialImage: faceGeometry.isPartialImage
+  });
+  
+  return clampedScale;
+}
+// ÉVALUATION DE QUALITÉ ADAPTÉE AUX PHOTOS PARTIELLES
+private assessPartialImageQuality(points: any, geometryConfidence: number): number {
+  let qualityScore = 0;
+  
+  // POINTS ESSENTIELS (yeux) - Pondération élevée
+  const essentialPoints = {
+    leftEyeOuter: 20,
+    rightEyeOuter: 20,
+    leftEyeInner: 15,
+    rightEyeInner: 15,
+    leftEyeCenter: 15,
+    rightEyeCenter: 15
+  };
+  
+  // POINTS OPTIONNELS - Bonus si présents
+  const optionalPoints = {
+    noseBridge: 10,
+    leftEyeTop: 5,
+    rightEyeTop: 5,
+    leftEyeBottom: 5,
+    rightEyeBottom: 5,
+    forehead: 3,
+    chin: 3,
+    leftFaceEdge: 2,
+    rightFaceEdge: 2
+  };
+  
+  // Évaluation des points essentiels
+  Object.entries(essentialPoints).forEach(([pointName, weight]) => {
+    const point = points[pointName];
+    if (point && !this.isInvalidPoint(point)) {
+      qualityScore += weight;
+    }
+  });
+  
+  // Bonus pour les points optionnels
+  Object.entries(optionalPoints).forEach(([pointName, weight]) => {
+    const point = points[pointName];
+    if (point && !this.isInvalidPoint(point)) {
+      qualityScore += weight;
+    }
+  });
+  
+  // Intégration de la confiance géométrique
+  const geometryBonus = (geometryConfidence / 100) * 20;
+  qualityScore += geometryBonus;
+  
+  // Bonus de cohérence pour les yeux
+  if (qualityScore > 70) {
+    const leftEye = points.leftEyeCenter;
+    const rightEye = points.rightEyeCenter;
+    
+    if (leftEye && rightEye) {
+      const eyeDistance = leftEye.distanceTo(rightEye);
+      if (eyeDistance > 20 && eyeDistance < 300) {
+        qualityScore += 10;
       }
     }
   }
-
-  // Calcul des métriques géométriques (VOTRE CONFIG ORIGINALE)
-  const geometry = {
-    eyeCenter: eyeCenter,
-    eyeDistance: Math.max(30, points.leftEyeCenter.distanceTo(points.rightEyeCenter)),
-    faceWidth: Math.max(80, Math.abs(points.rightCheek.x - points.leftCheek.x)),
-    faceHeight: Math.max(120, Math.abs(points.forehead.y - points.chin.y)),
-    templeWidth: Math.max(100, Math.abs(points.rightTemple.x - points.leftTemple.x)),
-    eyeLevel: eyeCenter.y,
-    noseBridgePosition: points.noseBridge,
-    noseDepth: Math.max(5, Math.abs(points.noseTip.z - points.noseBridge.z)),
-    browHeight: Math.abs(points.leftBrowInner.y - points.leftEyeCenter.y),
-    eyeDirection: new THREE.Vector3()
-      .subVectors(points.rightEyeCenter, points.leftEyeCenter)
-      .normalize(),
-    points: points,
-    
-    // 🆕 INFOS POUR CAS DIFFICILES
-    problematicCase: isProblematicCase
-  };
   
-  // VOS LOGS ORIGINAUX
-  console.log('🔍 Points critiques détectés:', {
-    leftEyeCenter: `(${points.leftEyeCenter.x.toFixed(1)}, ${points.leftEyeCenter.y.toFixed(1)})`,
-    rightEyeCenter: `(${points.rightEyeCenter.x.toFixed(1)}, ${points.rightEyeCenter.y.toFixed(1)})`,
-    eyeDistance: geometry.eyeDistance.toFixed(1),
-    faceWidth: geometry.faceWidth.toFixed(1),
-    problematic: isProblematicCase.needsCorrection
+  const finalQuality = Math.min(100, qualityScore);
+  
+  console.log('🎯 Qualité image partielle:', {
+    baseScore: (qualityScore - geometryBonus).toFixed(1),
+    geometryBonus: geometryBonus.toFixed(1),
+    finalQuality: finalQuality.toFixed(1)
   });
-
-  return geometry;
+  
+  return finalQuality;
 }
-private detectProblematicCase(points: any, imageWidth: number, imageHeight: number) {
-  const issues = [];
-  let needsCorrection = false;
+// CALCUL ADAPTATIF DU CENTRE DES YEUX
+private calculateAdaptiveEyeCenter(eye: 'left' | 'right', points: any): THREE.Vector3 {
+  const prefix = eye === 'left' ? 'left' : 'right';
   
-  // 1. Visage petit (< 20% de l'image)
-  const faceWidth = Math.abs(points.rightEyeOuter.x - points.leftEyeOuter.x);
-  const faceRatio = faceWidth / imageWidth;
-  if (faceRatio < 0.2) {
-    issues.push('visage petit');
-    needsCorrection = true;
+  const outerCorner = points[`${prefix}EyeOuter`];
+  const innerCorner = points[`${prefix}EyeInner`];
+  const topLid = points[`${prefix}EyeTop`];
+  const bottomLid = points[`${prefix}EyeBottom`];
+  // Vérification des points essentiels
+  if (this.isInvalidPoint(outerCorner) || this.isInvalidPoint(innerCorner)) {
+    console.error(`❌ Points essentiels manquants pour l'œil ${eye}`);
+    return new THREE.Vector3(0, 0, 0);
   }
   
-  // 2. Visage décentré (centre du visage loin du centre image)
-  const faceCenterX = (points.leftEyeOuter.x + points.rightEyeOuter.x) / 2;
-  const imageCenterX = 0; // Car coordonnées centrées
-  const offsetRatio = Math.abs(faceCenterX - imageCenterX) / (imageWidth / 2);
-  if (offsetRatio > 0.4) {
-    issues.push('visage décentré');
-    needsCorrection = true;
-  }
+  // MÉTHODE ADAPTATIVE : Plusieurs approches selon la qualité des points
+  let centerX = (outerCorner.x + innerCorner.x) / 2;
+  let centerY = (outerCorner.y + innerCorner.y) / 2;
+  let centerZ = (outerCorner.z + innerCorner.z) / 2;
   
-  // 3. Yeux fermés/souriants (faible distance verticale paupières)
-  const leftEyeHeight = Math.abs(points.leftEyeTop.y - points.leftEyeBottom.y);
-  const rightEyeHeight = Math.abs(points.rightEyeTop.y - points.rightEyeBottom.y);
-  const avgEyeHeight = (leftEyeHeight + rightEyeHeight) / 2;
-  if (avgEyeHeight < 8) {
-    issues.push('yeux fermés/souriants');
-    needsCorrection = true;
-  }
-  
-  // 4. Front non visible (sourcils trop bas par rapport aux yeux)
-  const browEyeDistance = Math.abs(points.leftBrowInner.y - points.leftEyeCenter.y);
-  if (browEyeDistance < 15) {
-    issues.push('front peu visible');
-    needsCorrection = true;
-  }
-  
-  return { needsCorrection, issues, faceRatio, offsetRatio, avgEyeHeight, browEyeDistance };
-}
-
-private correctProblematicPoints(points: any, problemCase: any, imageWidth: number, imageHeight: number) {
-  const correctedPoints = { ...points };
-  
-  // Correction pour visage petit : agrandir légèrement les distances
-  if (problemCase.faceRatio < 0.2) {
-    const scaleFactor = 1.2;
-    const eyeCenter = new THREE.Vector3()
-      .addVectors(points.leftEyeCenter, points.rightEyeCenter)
-      .multiplyScalar(0.5);
+  // Ajustement avec les paupières si disponibles
+  if (!this.isInvalidPoint(topLid) && !this.isInvalidPoint(bottomLid)) {
+    const lidCenterY = (topLid.y + bottomLid.y) / 2;
+    const lidCenterX = (topLid.x + bottomLid.x) / 2;
     
-    correctedPoints.leftEyeCenter = eyeCenter.clone().add(
-      points.leftEyeCenter.clone().sub(eyeCenter).multiplyScalar(scaleFactor)
-    );
-    correctedPoints.rightEyeCenter = eyeCenter.clone().add(
-      points.rightEyeCenter.clone().sub(eyeCenter).multiplyScalar(scaleFactor)
-    );
+    // Moyenne pondérée pour plus de précision
+    centerY = (centerY * 0.6) + (lidCenterY * 0.4);
+    centerX = (centerX * 0.8) + (lidCenterX * 0.2);
   }
   
-  // Correction pour yeux fermés : utiliser les sourcils comme référence
-  if (problemCase.avgEyeHeight < 8) {
-    console.log('👁️ Correction pour yeux fermés/souriants');
-    const leftBrowCenter = new THREE.Vector3()
-      .addVectors(points.leftBrowInner, points.leftBrowOuter)
-      .multiplyScalar(0.5);
-    const rightBrowCenter = new THREE.Vector3()
-      .addVectors(points.rightBrowInner, points.rightBrowOuter)
-      .multiplyScalar(0.5);
-    
-    // Ajuster la position Y vers les sourcils
-    if (!leftBrowCenter.equals(new THREE.Vector3(0, 0, 0))) {
-      correctedPoints.leftEyeCenter.y = (correctedPoints.leftEyeCenter.y + leftBrowCenter.y) / 2;
-    }
-    if (!rightBrowCenter.equals(new THREE.Vector3(0, 0, 0))) {
-      correctedPoints.rightEyeCenter.y = (correctedPoints.rightEyeCenter.y + rightBrowCenter.y) / 2;
-    }
-  }
-  
-  // Correction pour front non visible : ajuster position verticale
-  if (problemCase.browEyeDistance < 15) {
-    console.log('👤 Correction pour front peu visible');
-    correctedPoints.leftEyeCenter.y -= 5;
-    correctedPoints.rightEyeCenter.y -= 5;
-  }
-  
-  return correctedPoints;
+  return new THREE.Vector3(centerX, centerY, centerZ);
 }
 
-///////////////////////////////////////principale//////////////////////////////////
+// CALCUL PRÉCIS DE L'ANGLE DU VISAGE
+private calculatePreciseFaceAngle(points: any): number {
+  const leftEye = points.leftEyeCenter;
+  const rightEye = points.rightEyeCenter;
+  
+  if (this.isInvalidPoint(leftEye) || this.isInvalidPoint(rightEye)) {
+    return 0;
+  }
+  
+  // Calcul de l'inclinaison du visage
+  const deltaY = rightEye.y - leftEye.y;
+  const deltaX = rightEye.x - leftEye.x;
+  
+  if (Math.abs(deltaX) < 0.001) return 0;
+  
+  const angle = Math.atan2(deltaY, deltaX);
+  
+  // Limitation et lissage de l'angle
+  const maxAngle = Math.PI / 8; // ±22.5°
+  return Math.max(-maxAngle, Math.min(maxAngle, angle)) * 0.8; // Facteur de lissage
+}
+private calculateIntelligentGlassesPosition(faceGeometry: FaceGeometry): THREE.Vector3 {
+  console.log('🎯 Calcul position optimale pour image crop');
+  
+  if (!faceGeometry || !faceGeometry.points) {
+    console.error('❌ Géométrie du visage manquante');
+    return new THREE.Vector3(0, 0, 0);
+  }
+  
+  const points = faceGeometry.points;
+  const eyeDistance = faceGeometry.eyeDistance;
+  
+  // POSITION HORIZONTALE : Centre exact entre les yeux
+  const horizontalCenter = faceGeometry.eyeCenter.x;
+  
+  // POSITION VERTICALE OPTIMISÉE POUR CROPS
+  let verticalPosition = faceGeometry.eyeCenter.y;
+  
+  // AJUSTEMENT VERTICAL INTELLIGENT
+  const baseOffset = this.calculateVerticalOffset(faceGeometry);
+  verticalPosition += baseOffset;
+  
+  // POSITION EN PROFONDEUR ADAPTATIVE
+  const depthPosition = this.calculateOptimalDepth(points, eyeDistance);
+  
+  const finalPosition = new THREE.Vector3(
+    horizontalCenter,
+    verticalPosition,
+    depthPosition
+  );
+  
+  // VALIDATION ET AJUSTEMENT FINAL
+  const adjustedPosition = this.validateAndAdjustPosition(finalPosition, faceGeometry);
+  
+  console.log('✅ Position optimale calculée:', {
+    original: `(${finalPosition.x.toFixed(1)}, ${finalPosition.y.toFixed(1)}, ${finalPosition.z.toFixed(4)})`,
+    adjusted: `(${adjustedPosition.x.toFixed(1)}, ${adjustedPosition.y.toFixed(1)}, ${adjustedPosition.z.toFixed(4)})`,
+    eyeDistance: eyeDistance.toFixed(1),
+    baseOffset: baseOffset.toFixed(2)
+  });
+  
+  return adjustedPosition;
+}
+// CALCUL INTELLIGENT DE L'OFFSET VERTICAL
+private calculateVerticalOffset(faceGeometry: FaceGeometry): number {
+  const eyeDistance = faceGeometry.eyeDistance;
+  const isPartialImage = faceGeometry.isPartialImage;
+  
+  let baseOffset = 0;
+  
+  // CALCUL BASÉ SUR LA TAILLE DES YEUX
+  if (eyeDistance > 120) {
+    // Visage très large (gros plan)
+    baseOffset = -eyeDistance * 0.02;
+  } else if (eyeDistance > 80) {
+    // Visage large
+    baseOffset = -eyeDistance * 0.035;
+  } else if (eyeDistance > 50) {
+    // Visage moyen
+    baseOffset = -eyeDistance * 0.05;
+  } else {
+    // Petit visage
+    baseOffset = -eyeDistance * 0.07;
+  }
+  
+  // AJUSTEMENT POUR IMAGES CROPPÉES
+  if (isPartialImage) {
+    // Réduction de l'offset pour éviter que les lunettes sortent du cadre
+    baseOffset *= 0.6;
+    console.log('🔍 Offset réduit pour image croppée');
+  }
+  
+  // AJUSTEMENT SELON LA QUALITÉ
+  const qualityFactor = Math.max(0.7, faceGeometry.quality / 100);
+  baseOffset *= qualityFactor;
+  
+  return baseOffset;
+}
+
+// CALCUL OPTIMAL DE LA PROFONDEUR
+private calculateOptimalDepth(points: any, eyeDistance: number): number {
+  let depthPosition = -0.008; // Valeur par défaut
+  
+  // MÉTHODE 1: Utiliser le pont du nez si disponible
+  if (!this.isInvalidPoint(points.noseBridge)) {
+    const noseDepth = points.noseBridge.z;
+    depthPosition = noseDepth - (eyeDistance * 0.00008); // Ajustement plus fin
+    console.log('✅ Profondeur basée sur le nez');
+  } 
+  // MÉTHODE 2: Moyenner les yeux
+  else if (!this.isInvalidPoint(points.leftEyeCenter) && !this.isInvalidPoint(points.rightEyeCenter)) {
+    const leftDepth = points.leftEyeCenter.z;
+    const rightDepth = points.rightEyeCenter.z;
+    const avgDepth = (leftDepth + rightDepth) / 2;
+    depthPosition = avgDepth - 0.006;
+    console.log('✅ Profondeur basée sur les yeux');
+  }
+  
+  // LIMITE DE SÉCURITÉ
+  depthPosition = Math.max(-0.02, Math.min(0.005, depthPosition));
+  
+  return depthPosition;
+}
+
+// VALIDATION ET AJUSTEMENT FINAL DE LA POSITION
+private validateAndAdjustPosition(position: THREE.Vector3, faceGeometry: FaceGeometry): THREE.Vector3 {
+  const maxX = this.imageDisplayWidth / 2;
+  const maxY = this.imageDisplayHeight / 2;
+  
+  let adjustedPosition = position.clone();
+  let needsAdjustment = false;
+  
+  // AJUSTEMENT HORIZONTAL
+  if (Math.abs(position.x) > maxX * 0.9) {
+    adjustedPosition.x = Math.sign(position.x) * maxX * 0.8;
+    needsAdjustment = true;
+    console.log('🔧 Ajustement horizontal appliqué');
+  }
+  
+  // AJUSTEMENT VERTICAL
+  if (Math.abs(position.y) > maxY * 0.9) {
+    adjustedPosition.y = Math.sign(position.y) * maxY * 0.8;
+    needsAdjustment = true;
+    console.log('🔧 Ajustement vertical appliqué');
+  }
+  
+  // AJUSTEMENT SPÉCIAL POUR IMAGES CROPPÉES
+  if (faceGeometry.isPartialImage && needsAdjustment) {
+    // Rapprocher encore plus du centre pour les crops
+    adjustedPosition.x *= 0.9;
+    adjustedPosition.y *= 0.9;
+    console.log('🔍 Ajustement supplémentaire pour image croppée');
+  }
+  console.log("adjustedPosition",adjustedPosition);                                             
+  return adjustedPosition;
+}
+// NOUVELLE MÉTHODE: Validation des points
+private isInvalidPoint(point: THREE.Vector3): boolean {
+  return !point || 
+         point.equals(new THREE.Vector3(0, 0, 0)) ||
+         !isFinite(point.x) || !isFinite(point.y) || !isFinite(point.z) ||
+         Math.abs(point.x) > this.imageDisplayWidth/2 ||
+         Math.abs(point.y) > this.imageDisplayHeight/2;
+}
+////////////////////////////////////////////////
 private calculateAutomaticGlassesTransform(landmarks: any[], imageWidth: number, imageHeight: number) {
-  console.log('🤖 Calcul automatique basé sur les dimensions du visage');
+  console.log('🤖 Transformation automatique intelligente');
   
-  // 1. EXTRACTION DES POINTS CLÉS DU VISAGE
-  const facePoints = this.extractFaceGeometry(landmarks, imageWidth, imageHeight);
+  // 1. EXTRACTION GÉOMÉTRIQUE AVANCÉE
+  const faceGeometry = this.extractFaceGeometry(landmarks, imageWidth, imageHeight);
   
-  // 2. CALCUL AUTOMATIQUE DE LA POSITION
-  const position = this.calculateGlassesPosition(facePoints);
+  if (!faceGeometry) {
+    console.error('❌ Impossible d\'extraire la géométrie du visage');
+    return null;
+  }
   
-  // 3. CALCUL AUTOMATIQUE DE L'ÉCHELLE
-  const scale = this.calculateGlassesScale(facePoints);
+  // 2. CALCULS ADAPTATIFS
+  const position = this.calculateIntelligentGlassesPosition(faceGeometry);
+  const scale = faceGeometry.adaptiveScale;
+  const rotation = faceGeometry.faceAngle;
+  this.showReferencePoints(faceGeometry.points, this.scene3DImage,landmarks);
+  // 3. VALIDATION DE QUALITÉ
+  if (faceGeometry.quality < 60) {
+    console.warn('⚠️ Qualité des landmarks faible, ajustements conservateurs');
+    // Appliquer des ajustements plus conservateurs pour les détections de faible qualité
+    const conservativeTransform = this.applyConservativeAdjustments({
+      position, 
+      scale, 
+      rotation
+    }, faceGeometry.quality);
+    
+    return conservativeTransform;
+  }
   
-  
-  // 4. CALCUL AUTOMATIQUE DE LA ROTATION
-  const rotation = this.calculateGlassesRotation(facePoints);
-  //this.visualizeLandmarksBoth2DAnd3D(landmarks, this.overlayCanvasImage.nativeElement, facePoints, this.scene3DImage);
-  console.log('📐 Transform automatique calculé:', {
-    position: `${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`,
+  console.log('✅ Transformation automatique de haute qualité:', {
+    position: `${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(4)}`,
     scale: scale.toFixed(3),
-    rotation: `${(rotation * 180 / Math.PI).toFixed(1)}°`
+    rotation: `${(rotation * 180 / Math.PI).toFixed(1)}°`,
+    quality: faceGeometry.quality + '%'
   });
   
   return {
     position: position,
     rotation: new THREE.Euler(0, 0, rotation),
-    scale: new THREE.Vector3(scale, scale, scale)
+    scale: new THREE.Vector3(scale, scale, scale),
+    quality: faceGeometry.quality
+  };
+}
+// AJUSTEMENTS CONSERVATEURS POUR FAIBLE QUALITÉ
+private applyConservativeAdjustments(transform: any, quality: number): any {
+  const qualityFactor = quality / 100;
+  
+  // Réduction de l'échelle pour les détections incertaines
+  const conservativeScale = transform.scale * (0.8 + 0.2 * qualityFactor);
+  
+  // Réduction de la rotation pour éviter les sur-corrections
+  const conservativeRotation = transform.rotation * qualityFactor;
+  
+  // Position plus centrée pour les détections incertaines
+  const conservativePosition = new THREE.Vector3(
+    transform.position.x * qualityFactor,
+    transform.position.y * (0.8 + 0.2 * qualityFactor),
+    transform.position.z
+  );
+  
+  return {
+    position: conservativePosition,
+    rotation: conservativeRotation,
+    scale: conservativeScale
   };
 }
 ///////////////////////////////////////position//////////////////////////////////
-private calculateGlassesPosition(faceGeometry: any): THREE.Vector3 {   
-  console.log('📍 Calcul de position avec points corrigés');
+private showReferencePoints(points: any, scene: THREE.Scene | THREE.Group, landmarks: any[]) {
+  console.log('🎯 === DEBUG VISUEL DES POINTS ===');
   
-  // VOTRE LOGIQUE ORIGINALE QUI MARCHAIT BIEN
-  const leftEyeCorner = faceGeometry.points?.leftEyeOuter;   // Point 33 ✅
-  const rightEyeCorner = faceGeometry.points?.rightEyeOuter; // Point 263 ✅
-  const leftEyeCenter = faceGeometry.points?.leftEyeCenter;  // Calculé ✅
-  const rightEyeCenter = faceGeometry.points?.rightEyeCenter; // Calculé ✅
-  const noseBridge = faceGeometry.points?.noseBridge;        // Point 168 ✅
-  
-  if (!leftEyeCorner || !rightEyeCorner) {
-    console.error('❌ Points des coins des yeux manquants après correction');
-    return new THREE.Vector3(0, 0, 0);
-  }
-  
-  // 1. Position horizontale (VOTRE MÉTHODE ORIGINALE)
-  let horizontalCenter;
-  if (leftEyeCenter && rightEyeCenter &&
-       !leftEyeCenter.equals(new THREE.Vector3(0, 0, 0)) &&
-       !rightEyeCenter.equals(new THREE.Vector3(0, 0, 0))) {
-    horizontalCenter = (leftEyeCenter.x + rightEyeCenter.x) / 2;
-    console.log('✅ Position horizontale basée sur les centres des yeux');
-  } else {
-    horizontalCenter = (leftEyeCorner.x + rightEyeCorner.x) / 2;
-    console.log('⚠️ Position horizontale basée sur les coins externes (fallback)');
-  }
-  
-  // 2. Position verticale (VOTRE MÉTHODE ORIGINALE + AJUSTEMENTS CAS DIFFICILES)
-  let verticalPosition;
-  if (leftEyeCenter && rightEyeCenter &&
-       !leftEyeCenter.equals(new THREE.Vector3(0, 0, 0)) &&
-       !rightEyeCenter.equals(new THREE.Vector3(0, 0, 0))) {
-    verticalPosition = (leftEyeCenter.y + rightEyeCenter.y) / 2;
-  } else {
-    verticalPosition = (leftEyeCorner.y + rightEyeCorner.y) / 2;
-  }
-  
-  // 🆕 AJUSTEMENT SPÉCIAL POUR CAS DIFFICILES
-  let eyebrowOffset = -0.008; // Votre offset original
-  
-  if (faceGeometry.problematicCase?.issues.includes('yeux fermés/souriants')) {
-    eyebrowOffset = -0.015; // Plus vers les sourcils
-    console.log('👁️ Ajustement pour yeux fermés');
-  }
-  
-  if (faceGeometry.problematicCase?.issues.includes('visage petit')) {
-    eyebrowOffset = -0.012; // Ajustement intermédiaire
-    console.log('👤 Ajustement pour visage petit');
-  }
-  
-  verticalPosition += eyebrowOffset;
-  
-  // 3. Position en profondeur (VOTRE MÉTHODE ORIGINALE)
-  let depthPosition = 0;
-  if (noseBridge && !noseBridge.equals(new THREE.Vector3(0, 0, 0))) {
-    depthPosition = noseBridge.z - 0.012;
-  } else if (leftEyeCenter && rightEyeCenter) {
-    depthPosition = (leftEyeCenter.z + rightEyeCenter.z) / 2 - 0.012;
-  } else {
-    depthPosition = (leftEyeCorner.z + rightEyeCorner.z) / 2 - 0.012;
-  }
-  
-  const finalPosition = new THREE.Vector3(horizontalCenter, verticalPosition, depthPosition);
-  
-  console.log('📍 Position finale calculée:', {
-    x: finalPosition.x.toFixed(3),
-    y: finalPosition.y.toFixed(3),
-    z: finalPosition.z.toFixed(3),
-    corrections: faceGeometry.problematicCase?.issues || []
-  });
-  
-  // VOS AUTRES MÉTHODES ORIGINALES (showReferencePoints, etc.)
-  this.showReferencePoints(faceGeometry.points, this.scene3DImage);
-  return finalPosition;
-}
-// 🔍 MÉTHODE DE DEBUG AMÉLIORÉE
-private showReferencePoints(points: any, scene: THREE.Scene | THREE.Group) {
-  // Nettoyer les anciens points de debug
+  // Nettoyer les anciens points
   this.clearDebugPoints(scene);
   
+  // Debug des conversions pour les points principaux 
+  // Points de référence avec debug étendu
   const referencePoints = [
-    { key: 'leftEyeOuter', color: 0xff0000, label: 'L-Outer(33)' },    // Rouge
-    { key: 'rightEyeOuter', color: 0x00ff00, label: 'R-Outer(263)' },  // Vert
-    { key: 'leftEyeCenter', color: 0x0000ff, label: 'L-Center' },      // Bleu
-    { key: 'rightEyeCenter', color: 0xffff00, label: 'R-Center' },     // Jaune
-    { key: 'noseBridge', color: 0xff00ff, label: 'Nose(168)' }         // Magenta
+    { key: 'leftEyeOuter', index: 33, color: 0x00ff00, label: 'L-Outer(33)', size: 6 },
+    { key: 'rightEyeOuter', index: 263, color: 0x00ff00, label: 'R-Outer(263)', size: 6 },
+    { key: 'leftEyeInner', index: 133, color: 0x00ffff, label: 'L-Inner(133)', size: 6 },
+    { key: 'rightEyeInner', index: 362, color: 0x00ffff, label: 'R-Inner(362)', size: 6 },
+    { key: 'leftEyeCenter', color: 0x0000ff, label: 'L-Center', size: 8 },
+    { key: 'rightEyeCenter', color: 0xffff00, label: 'R-Center', size: 8 },
+    { key: 'noseBridge', index: 168, color: 0xff00ff, label: 'Nose(168)', size: 6 },
+    { key: 'forehead', index: 10, color: 0xff00ff, label: 'Forehead(10)', size: 6 },
+    { key: 'chin', index: 152, color: 0xff00ff, label: 'Chin(152)', size: 6 },
+    { key: 'leftFaceEdge', index: 234, color: 0xff00ff, label: 'Left-Face(234)', size: 6 },
+    { key: 'rightFaceEdge', index: 454, color: 0xff00ff, label: 'Right-Face(454)', size: 6 },
+    { key: 'leftTemple', index: 127, color: 0xff00ff, label: 'Left-Temple(127)', size: 6 },
+    { key: 'rightTemple', index: 356, color: 0xff00ff, label: 'Right-Temple(356)', size: 6 }
   ];
- 
+  
+  console.log('\n📊 Positions des points:');
+  
   referencePoints.forEach(ref => {
     const pt = points[ref.key];
+    
     if (pt && !pt.equals(new THREE.Vector3(0, 0, 0))) {
-      const geometry = new THREE.SphereGeometry(8, 16, 16);
+      // Créer la sphère de debug
+      const geometry = new THREE.SphereGeometry(ref.size, 16, 16);
       const material = new THREE.MeshBasicMaterial({ 
         color: ref.color,
         transparent: true,
-        opacity: 0.8
+        opacity: 0.9
       });
       const sphere = new THREE.Mesh(geometry, material);
       sphere.position.set(pt.x, pt.y, pt.z);
       sphere.name = 'debug_point';
       scene.add(sphere);
       
-      console.log(`🎯 ${ref.label}: ${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}, ${pt.z.toFixed(1)}`);
+      console.log(`🎯 ${ref.label}:`, {
+        position: `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}, ${pt.z.toFixed(1)})`,
+        inBoundsX: Math.abs(pt.x) <= this.imageDisplayWidth / 2,
+        inBoundsY: Math.abs(pt.y) <= this.imageDisplayHeight / 2,
+        distanceFromCenter: Math.sqrt(pt.x * pt.x + pt.y * pt.y).toFixed(1)
+      });
+      
+      // Debug de la conversion si on a l'index
+      if (ref.index && landmarks[ref.index]) {
+        const raw = landmarks[ref.index];
+        console.log(`    Raw: (${raw.x.toFixed(3)}, ${raw.y.toFixed(3)}, ${raw.z.toFixed(3)})`);
+        
+        // Test des différentes méthodes de conversion
+      }
     } else {
       console.warn(`⚠️ Point ${ref.key} manquant ou invalide`);
     }
   });
+  
+  // Position finale des lunettes avec debug
+  if (points.leftEyeCenter && points.rightEyeCenter) {
+    const glassesCenter = new THREE.Vector3()
+      .addVectors(points.leftEyeCenter, points.rightEyeCenter)
+      .multiplyScalar(0.5);
+      
+    const glassesGeometry = new THREE.SphereGeometry(10, 16, 16);
+    const glassesMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.7
+    });
+    const glassesSphere = new THREE.Mesh(glassesGeometry, glassesMaterial);
+    glassesSphere.position.copy(glassesCenter);
+    glassesSphere.name = 'debug_point';
+    scene.add(glassesSphere);
+    
+    console.log('\n🥽 Position lunettes:', {
+      center: `(${glassesCenter.x.toFixed(1)}, ${glassesCenter.y.toFixed(1)}, ${glassesCenter.z.toFixed(1)})`,
+      eyeDistance: points.leftEyeCenter.distanceTo(points.rightEyeCenter).toFixed(1),
+      inImageBounds: this.isPositionInImageBounds(glassesCenter)
+    });
+  }
+  
+  // Ajouter des points de référence aux coins de l'image
+  this.addImageBoundsDebug(scene);
+}
+// VÉRIFICATION SI UN POINT EST DANS LES LIMITES DE L'IMAGE
+private isPositionInImageBounds(position: THREE.Vector3): boolean {
+  return Math.abs(position.x) <= this.imageDisplayWidth / 2 && 
+         Math.abs(position.y) <= this.imageDisplayHeight / 2;
 }
 
+// DEBUG DES LIMITES DE L'IMAGE
+private addImageBoundsDebug(scene: THREE.Scene | THREE.Group) {
+  const corners = [
+    { pos: new THREE.Vector3(-this.imageDisplayWidth/2, -this.imageDisplayHeight/2, 0), color: 0xff0000, name: 'Top-Left' },
+    { pos: new THREE.Vector3(this.imageDisplayWidth/2, -this.imageDisplayHeight/2, 0), color: 0x00ff00, name: 'Top-Right' },
+    { pos: new THREE.Vector3(-this.imageDisplayWidth/2, this.imageDisplayHeight/2, 0), color: 0x0000ff, name: 'Bottom-Left' },
+    { pos: new THREE.Vector3(this.imageDisplayWidth/2, this.imageDisplayHeight/2, 0), color: 0xffff00, name: 'Bottom-Right' },
+    { pos: new THREE.Vector3(0, 0, 0), color: 0xff00ff, name: 'Center' }
+  ];
+  
+  console.log('\n🔲 Coins de l\'image (système Three.js):');
+  
+  corners.forEach(corner => {
+    const geometry = new THREE.SphereGeometry(8, 8, 8);
+    const material = new THREE.MeshBasicMaterial({ 
+      color: corner.color,
+      transparent: true,
+      opacity: 0.5
+    });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(corner.pos);
+    sphere.name = 'debug_bounds';
+    scene.add(sphere);
+    const axesHelper = new THREE.AxesHelper(100);
+scene.add(axesHelper);
+    console.log(`  ${corner.name}: (${corner.pos.x}, ${corner.pos.y})`);
+  });
+}
 private clearDebugPoints(scene: THREE.Scene | THREE.Group) {
-  const toRemove: THREE.Object3D[] = [];
-  scene.traverse((object) => {
-    if (object.name === 'debug_point') {
-      toRemove.push(object);
+  const pointsToRemove: THREE.Object3D[] = [];
+  scene.traverse((child) => {
+    if (child.name === 'debug_point') {
+      pointsToRemove.push(child);
     }
   });
-  toRemove.forEach(obj => scene.remove(obj));
-}
-/////////////////////////////////scale
-// 
-private calculateGlassesScale(faceGeometry: any): number {
-  console.log('📏 Calcul d\'échelle amélioré');
   
-  // Mesures multiples pour plus de précision
-  const eyeDistance = faceGeometry.eyeDistance || 65;
-  const faceWidth = faceGeometry.faceWidth || 130;
-  const templeDistance = faceGeometry.templeWidth || 150;
-  
-  // Calcul basé sur la distance inter-pupillaire (IPD)
-  const averageIPD = 63; // Distance moyenne en mm
-  const baseScale = Math.max(0.4, Math.min(1.2, eyeDistance / averageIPD));
-  
-  // Facteurs d'ajustement selon le type de visage
-  let adjustmentFactor = 1.0;
-  const faceRatio = faceWidth / (faceGeometry.faceHeight || 180);
-  
-  if (faceRatio > 0.8) {
-    // Visage large - lunettes légèrement plus grandes
-    adjustmentFactor = 1.05;
-  } else if (faceRatio < 0.7) {
-    // Visage étroit - lunettes légèrement plus petites
-    adjustmentFactor = 0.95;
-  }
-  
-  // Facteur de correction pour le rendu virtuel
-  const virtualFactor = 0.82; // À ajuster selon votre modèle 3D
-  
-  const finalScale = baseScale * adjustmentFactor * virtualFactor;
-  
-  // Limitation sécurisée
-  return Math.max(0.3, Math.min(1.5, finalScale));
-}
-////////////rotation
-private calculateGlassesRotation(faceGeometry: any): number {
-  console.log('🔄 Calcul de rotation optimisé');
-  
-  if (!faceGeometry.points?.leftEyeCenter || !faceGeometry.points?.rightEyeCenter) {
-    console.warn('Points des yeux manquants pour la rotation');
-    return 0;
-  }
-  
-  const leftEye = faceGeometry.points.leftEyeCenter;
-  const rightEye = faceGeometry.points.rightEyeCenter;
-  
-  // Calcul de l'angle avec compensation de perspective
-  const deltaY = rightEye.y - leftEye.y;
-  const deltaX = rightEye.x - leftEye.x;
-  
-  // Éviter division par zéro
-  if (Math.abs(deltaX) < 0.001) {
-    return 0;
-  }
-  
-  const rotationAngle = Math.atan2(deltaY, deltaX);
-  
-  // Limitation plus stricte pour un rendu naturel
-  const maxRotation = Math.PI / 12; // ±15° maximum
-  const safeRotation = isFinite(rotationAngle) ? 
-    Math.max(-maxRotation, Math.min(maxRotation, rotationAngle)) : 0;
-  
-  // Facteur de réduction pour éviter la sur-rotation
-  const dampingFactor = 0.7;
-  const finalRotation = safeRotation * dampingFactor;
-  
-  console.log('🔄 Rotation optimisée:', {
-    deltaX: deltaX.toFixed(3),
-    deltaY: deltaY.toFixed(3),
-    rawAngle: `${(rotationAngle * 180 / Math.PI).toFixed(1)}°`,
-    safeAngle: `${(safeRotation * 180 / Math.PI).toFixed(1)}°`,
-    finalAngle: `${(finalRotation * 180 / Math.PI).toFixed(1)}°`
+  pointsToRemove.forEach(point => {
+    scene.remove(point);
   });
-  
-  return finalRotation;
 }
+////////
 // NOUVELLE MÉTHODE PRINCIPALE DE POSITIONNEMENT
 private positionGlassesAutomatically(glasses3D: THREE.Object3D, landmarks: any[], imageWidth: number, imageHeight: number) {
   if (!glasses3D || !landmarks || landmarks.length < 468) {
-    console.error('Données insuffisantes pour le positionnement automatique');
-    return;
+    console.error('❌ Données insuffisantes pour le positionnement intelligent');
+    return false;
+  }
+  
+  console.log('🎯 Début du positionnement intelligent');
+
+  // 1. CALCUL DE LA TRANSFORMATION AUTOMATIQUE
+  const transform = this.calculateAutomaticGlassesTransform(landmarks, imageWidth, imageHeight);
+  
+  if (!transform) {
+    console.error('❌ Échec du calcul de transformation');
+    return false;
   }
 
-  console.log('🎯 Début du positionnement automatique');
-
-  // 1. Calcul automatique de toutes les transformations
-  const transform = this.calculateAutomaticGlassesTransform(landmarks, imageWidth, imageHeight);
-
-  // 2. Application directe des transformations calculées
+  // 2. APPLICATION DE LA TRANSFORMATION
   glasses3D.position.copy(transform.position);
   glasses3D.rotation.copy(transform.rotation);
   glasses3D.scale.copy(transform.scale);
 
-  // 3. Validation finale
-  if (this.validateAutomaticTransform(transform, imageWidth, imageHeight)) {
-    console.log('✅ Positionnement automatique réussi');
+  // 3. VALIDATION ET RENDU
+  if (this.validateIntelligentTransform(transform, imageWidth, imageHeight)) {
+    console.log('✅ Positionnement intelligent réussi - Qualité:', transform.quality + '%');
     this.renderScene();
     return true;
   } else {
-    console.warn('⚠️ Transformation invalide, application des valeurs par défaut');
+    console.warn('⚠️ Transformation invalide, fallback appliqué');
     this.applyDefaultGlassesTransform(glasses3D, imageWidth, imageHeight);
     return false;
   }
 }
-
-private validateAutomaticTransform(transform: any, imageWidth: number, imageHeight: number): boolean {
+// VALIDATION INTELLIGENTE DE LA TRANSFORMATION
+private validateIntelligentTransform(transform: any, imageWidth: number, imageHeight: number): boolean {
   const pos = transform.position;
   const scale = transform.scale.x;
   
-  // Validation basée sur les dimensions de l'image
+  // Validation étendue basée sur les dimensions
   const positionValid = 
-    Math.abs(pos.x) < imageWidth * 0.6 &&
-    Math.abs(pos.y) < imageHeight * 0.6 &&
-    Math.abs(pos.z) < Math.min(imageWidth, imageHeight);
+    Math.abs(pos.x) < imageWidth * 0.7 &&
+    Math.abs(pos.y) < imageHeight * 0.7 &&
+    Math.abs(pos.z) < Math.min(imageWidth, imageHeight) * 0.5;
   
-  const scaleValid = scale >= 0.2 && scale <= 3.0;
+  const scaleValid = scale >= 0.3 && scale <= 2.5;
   
-  return positionValid && scaleValid && 
-         isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z) && isFinite(scale);
+  const numericValid = 
+    isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z) && 
+    isFinite(scale) && !isNaN(scale);
+  
+  const qualityValid = transform.quality >= 40; // Seuil de qualité minimal
+  
+  return positionValid && scaleValid && numericValid && qualityValid;
 }
 
 private applyDefaultGlassesTransform(glasses3D: THREE.Object3D, imageWidth: number, imageHeight: number) {
@@ -920,11 +1739,9 @@ private applyDefaultGlassesTransform(glasses3D: THREE.Object3D, imageWidth: numb
   glasses3D.scale.set(0.8, 0.8, 0.8); // Échelle standard
   this.renderScene();
 }
-
 // MISE À JOUR DE LA MÉTHODE PRINCIPALE
 async processGlassesPositioningWithScaling(landmarks: any[], naturalWidth: number, naturalHeight: number) {
   console.log('🔄 Traitement automatique du positionnement');
-
   // Utilisation directe des dimensions d'affichage (pas de conversion d'échelle)
   const success = this.positionGlassesAutomatically(
     this.glasses3DImage!, 
@@ -1106,15 +1923,15 @@ private renderScene(points?: any) {
 ////////////////////////////////
 // Dessin des repères faciaux sur l'image (pour débogage
   // 🎨 Votre méthode existante améliorée
-  private visualizeLandmarksBoth2DAnd3D(landmarks: any[], canvas: HTMLCanvasElement, points3D: any, scene: THREE.Scene) {
-  // 🖼️ Visualisation 2D sur canvas
-  this.drawLandmarksOnImage(landmarks, canvas);
+//   private visualizeLandmarksBoth2DAnd3D(landmarks: any[], canvas: HTMLCanvasElement, points3D: any, scene: THREE.Scene) {
+//   // 🖼️ Visualisation 2D sur canvas
+//   //this.drawLandmarksOnImage(landmarks, canvas);
   
-  // 🌍 Visualisation 3D dans la scène
-  this.visualizeFaceLandmarks3D(points3D, scene);
+//   // 🌍 Visualisation 3D dans la scène
+//   this.visualizeFaceLandmarks3D(points3D, scene);
   
-  console.log(`📊 Visualisation: ${landmarks.length} landmarks 2D + landmarks 3D`);
-}
+//   console.log(`📊 Visualisation: ${landmarks.length} landmarks 2D + landmarks 3D`);
+// }
 private drawLandmarksOnImage(landmarks: any[], canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d');
   if (!ctx || !landmarks || !Array.isArray(landmarks)) return;
@@ -1122,7 +1939,7 @@ private drawLandmarksOnImage(landmarks: any[], canvas: HTMLCanvasElement) {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 🔴 Tous les landmarks en rouge (petits points)
+  //🔴 Tous les landmarks en rouge (petits points)
   ctx.fillStyle = 'red';
   for (const pt of landmarks) {
     if (!pt) continue;
@@ -1169,104 +1986,104 @@ private drawLandmarksOnImage(landmarks: any[], canvas: HTMLCanvasElement) {
   ctx.restore();
 }
 
-// 🌍 Méthode 3D adaptée à vos besoins
-private visualizeFaceLandmarks3D(points: any, scene: THREE.Scene) {
-  // Nettoyer les anciens landmarks 3D
-  this.clearLandmarks3D(scene);
+// // 🌍 Méthode 3D adaptée à vos besoins
+// private visualizeFaceLandmarks3D(points: any, scene: THREE.Scene) {
+//   // Nettoyer les anciens landmarks 3D
+//   this.clearLandmarks3D(scene);
   
-  if (!points) return;
+//   if (!points) return;
 
-  const COORDINATE_SCALE = 0.05;
+//   const COORDINATE_SCALE = 1;
   
-  // 🎨 Couleurs pour correspondre à votre canvas 2D
-  const colors = {
-    eyes: 0x00ff00,      // Lime (comme vos indices 33, 263)
-    nose: 0x00ffff,      // Cyan (comme votre indice 1)
-    mouth: 0xffa500,     // Orange (comme votre indice 10)
-    chin: 0xffc0cb,      // Pink (comme votre indice 152)
-    center: 0xffff00,    // Yellow (comme votre indice 6)
-    cheeks: 0x800080,    // Purple (comme vos indices 168, 197)
-    general: 0xff0000    // Rouge (comme tous les autres points)
-  };
+//   // 🎨 Couleurs pour correspondre à votre canvas 2D
+//   const colors = {
+//     eyes: 0x00ff00,      // Lime (comme vos indices 33, 263)
+//     nose: 0x00ffff,      // Cyan (comme votre indice 1)
+//     mouth: 0xffa500,     // Orange (comme votre indice 10)
+//     chin: 0xffc0cb,      // Pink (comme votre indice 152)
+//     center: 0xffff00,    // Yellow (comme votre indice 6)
+//     cheeks: 0x800080,    // Purple (comme vos indices 168, 197)
+//     general: 0xff0000    // Rouge (comme tous les autres points)
+//   };
 
-  // 🔵 Création de points 3D avec les mêmes couleurs qu'en 2D
-  const createPoint3D = (position: THREE.Vector3, color: number, size: number = 5) => {
-    const geometry = new THREE.SphereGeometry(size, 4, 4);
-    const material = new THREE.MeshBasicMaterial({ 
-      color: color,
-      transparent: true,
-      opacity: 1
-    });
-    const point = new THREE.Mesh(geometry, material);
+//   // 🔵 Création de points 3D avec les mêmes couleurs qu'en 2D
+//   const createPoint3D = (position: THREE.Vector3, color: number, size: number = 5) => {
+//     const geometry = new THREE.SphereGeometry(size, 4, 4);
+//     const material = new THREE.MeshBasicMaterial({ 
+//       color: color,
+//       transparent: true,
+//       opacity: 1
+//     });
+//     const point = new THREE.Mesh(geometry, material);
     
-    point.position.copy(position.clone().multiplyScalar(COORDINATE_SCALE));
-    point.name = 'landmark_3d_point';
-    scene.add(point);
+//     point.position.copy(position.clone().multiplyScalar(COORDINATE_SCALE));
+//     point.name = 'landmark_3d_point';
+//     scene.add(point);
     
-    return point;
-  };
+//     return point;
+//   };
 
-  // 👁️ Yeux (correspondant aux indices 33, 263)
-  if (points.leftEye && points.rightEye) {
-    createPoint3D(points.leftEye, colors.eyes, 1.0);
-    createPoint3D(points.rightEye, colors.eyes, 1.0);
+//   // 👁️ Yeux (correspondant aux indices 33, 263)
+//   if (points.leftEye && points.rightEye) {
+//     createPoint3D(points.leftEye, colors.eyes, 1.0);
+//     createPoint3D(points.rightEye, colors.eyes, 1.0);
     
-    // Ligne entre les yeux
-    const eyePoints = [
-      points.leftEye.clone().multiplyScalar(COORDINATE_SCALE),
-      points.rightEye.clone().multiplyScalar(COORDINATE_SCALE)
-    ];
-    const eyeGeometry = new THREE.BufferGeometry().setFromPoints(eyePoints);
-    const eyeLine = new THREE.Line(eyeGeometry, new THREE.LineBasicMaterial({ 
-      color: colors.eyes, 
-      opacity: 0.6, 
-      transparent: true 
-    }));
-    eyeLine.name = 'landmark_3d_line';
-    scene.add(eyeLine);
-  }
+//     // Ligne entre les yeux
+//     const eyePoints = [
+//       points.leftEye.clone().multiplyScalar(COORDINATE_SCALE),
+//       points.rightEye.clone().multiplyScalar(COORDINATE_SCALE)
+//     ];
+//     const eyeGeometry = new THREE.BufferGeometry().setFromPoints(eyePoints);
+//     const eyeLine = new THREE.Line(eyeGeometry, new THREE.LineBasicMaterial({ 
+//       color: colors.eyes, 
+//       opacity: 0.6, 
+//       transparent: true 
+//     }));
+//     eyeLine.name = 'landmark_3d_line';
+//     scene.add(eyeLine);
+//   }
 
-  // 👃 Nez (correspondant à l'indice 1)
-  if (points.noseTip) {
-    createPoint3D(points.noseTip, colors.nose, 0.8);
-  }
+//   // 👃 Nez (correspondant à l'indice 1)
+//   if (points.noseTip) {
+//     createPoint3D(points.noseTip, colors.nose, 0.8);
+//   }
 
-  // 👄 Bouche (correspondant à l'indice 10)
-  if (points.mouth) {
-    createPoint3D(points.mouth, colors.mouth, 0.8);
-  }
+//   // 👄 Bouche (correspondant à l'indice 10)
+//   if (points.mouth) {
+//     createPoint3D(points.mouth, colors.mouth, 0.8);
+//   }
 
-  // 📐 Centre entre les yeux (correspondant à l'indice 6)
-  if (points.leftEye && points.rightEye) {
-    const eyeCenter = new THREE.Vector3()
-      .addVectors(points.leftEye, points.rightEye)
-      .multiplyScalar(0.5);
-    createPoint3D(eyeCenter, colors.center, 0.7);
-  }
+//   // 📐 Centre entre les yeux (correspondant à l'indice 6)
+//   if (points.leftEye && points.rightEye) {
+//     const eyeCenter = new THREE.Vector3()
+//       .addVectors(points.leftEye, points.rightEye)
+//       .multiplyScalar(0.5);
+//     createPoint3D(eyeCenter, colors.center, 0.7);
+//   }
 
-  console.log('✅ Landmarks 3D visualisés avec couleurs correspondantes au 2D');
-}
+//   console.log('✅ Landmarks 3D visualisés avec couleurs correspondantes au 2D');
+// }
 
-// 🧹 Nettoyage spécifique aux landmarks 3D
-private clearLandmarks3D(scene: THREE.Scene) {
-  const toRemove: THREE.Object3D[] = [];
+// // 🧹 Nettoyage spécifique aux landmarks 3D
+// private clearLandmarks3D(scene: THREE.Scene) {
+//   const toRemove: THREE.Object3D[] = [];
   
-  scene.traverse((object) => {
-    if (object.name === 'landmark_3d_point' || object.name === 'landmark_3d_line') {
-      toRemove.push(object);
-    }
-  });
+//   scene.traverse((object) => {
+//     if (object.name === 'landmark_3d_point' || object.name === 'landmark_3d_line') {
+//       toRemove.push(object);
+//     }
+//   });
   
-  toRemove.forEach(obj => {
-    scene.remove(obj);
-    if (obj instanceof THREE.Mesh) {
-      obj.geometry.dispose();
-      if (Array.isArray(obj.material)) {
-        obj.material.forEach(mat => mat.dispose());
-      } else {
-        obj.material.dispose();
-      }
-    }
-  });
-}
+//   toRemove.forEach(obj => {
+//     scene.remove(obj);
+//     if (obj instanceof THREE.Mesh) {
+//       obj.geometry.dispose();
+//       if (Array.isArray(obj.material)) {
+//         obj.material.forEach(mat => mat.dispose());
+//       } else {
+//         obj.material.dispose();
+//       }
+//     }
+//   });
+// }
 }
