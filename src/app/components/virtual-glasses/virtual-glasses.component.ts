@@ -121,11 +121,38 @@ private readonly ROTATION_HISTORY_SIZE = 3;
     }
     
   }
-  // 2. DÉTECTION DE PLATEFORME MOBILE
   private isMobile(): boolean {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
-      || window.innerWidth <= 768
-      || 'ontouchstart' in window; // Détection tactile
+    // Vérification directe des plateformes mobiles connues
+    const userAgent = navigator.userAgent.toLowerCase();
+    const mobileDevices = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i;
+    const isMobileUserAgent = mobileDevices.test(userAgent);
+    
+    // Détection spécifique iOS (plus restrictive)
+    const isIOS = /ipad|iphone|ipod/.test(userAgent) && !('MSStream' in window);
+    
+    // Détection Android plus spécifique
+    const isAndroid = /android/i.test(userAgent) && /mobile/i.test(userAgent);
+    
+    // Vérification de la taille d'écran ET du toucher (plus restrictive)
+    const isSmallScreen = window.innerWidth <= 768 && window.innerHeight <= 1024;
+    const hasTouchOnly = 'ontouchstart' in window && navigator.maxTouchPoints > 0 && !window.matchMedia('(pointer: fine)').matches;
+    
+    // Exclusion explicite des ordinateurs
+    const isDesktop = /windows nt|macintosh|linux/i.test(userAgent) && 
+                     !(/mobile|tablet/i.test(userAgent)) &&
+                     window.innerWidth > 1024;
+    
+    if (isDesktop) {
+      console.log('Détecté comme desktop:', { 
+        userAgent: navigator.userAgent, 
+        screenSize: `${window.innerWidth}x${window.innerHeight}`,
+        hasPointer: window.matchMedia('(pointer: fine)').matches 
+      });
+      return false;
+    }
+    
+    const result = isMobileUserAgent || isIOS || isAndroid || (isSmallScreen && hasTouchOnly);
+    return result;
   }
 
 private getPerformanceSettings() {
@@ -144,10 +171,8 @@ private getPerformanceSettings() {
 private startAnimationLoop() {
   const render = (currentTime: number) => {
     this.animationFrameId = requestAnimationFrame(render);
-    
     // Monitoring de performance moins fréquent
     this.monitorPerformance();
-    
     // Limitation FPS moins stricte sur mobile pour éviter la latence
     const isMobile = this.isMobile();
     const frameTimeThreshold = isMobile ? 
@@ -158,10 +183,6 @@ private startAnimationLoop() {
       return;
     }
     this.lastFrameTime = currentTime;
-    
-    // Ne pas sauter de frames sur mobile pour éviter les saccades
-    // if (this.shouldSkipFrame()) { return; }
-    
     // Nettoyage moins fréquent
     if (this.performanceMonitor.frameCount % 120 === 0) { // Toutes les 4 secondes au lieu de 1
       this.cleanupOptimization();
@@ -346,6 +367,44 @@ private smoothRotation(newRotation: THREE.Euler): THREE.Euler {
   smoothed.z /= totalWeight;
 
   return smoothed;
+}
+private smoothRotationDesktop(newRotation: THREE.Euler): THREE.Euler {
+  const settings = this.getPerformanceSettings();
+  
+  if (settings.priorityMode) {
+    // Version ultra-optimisée pour mobile
+    this.rotationHistory.push(newRotation.clone());
+
+    if (this.rotationHistory.length > 1) {
+      this.rotationHistory.shift(); // Garder seulement les 2 dernières valeurs
+    }
+
+    if (this.rotationHistory.length < 2) {
+      return newRotation.clone();
+    }
+    
+    const prev = this.rotationHistory[0];
+    
+    // Détection de mouvement très sensible
+    const rotationDelta = Math.abs(newRotation.x - prev.x) + 
+                         Math.abs(newRotation.y - prev.y) + 
+                         Math.abs(newRotation.z - prev.z);
+    
+    // Seuil très bas pour détecter même les petits mouvements
+    const isMovement = rotationDelta > 0.05;
+    
+    // Si mouvement détecté, suivre immédiatement avec 95% de la nouvelle valeur
+    const adaptiveSmoothingFactor = isMovement ? 0.95 : 0.85;
+    
+    return new THREE.Euler(
+      prev.x * (1 - adaptiveSmoothingFactor) + newRotation.x * adaptiveSmoothingFactor,
+      prev.y * (1 - adaptiveSmoothingFactor) + newRotation.y * adaptiveSmoothingFactor,
+      prev.z * (1 - adaptiveSmoothingFactor) + newRotation.z * adaptiveSmoothingFactor
+    );
+  }
+
+  // Version desktop inchangée...
+  return this.smoothRotationDesktop(newRotation);
 }
 private glassesOffset = {
   horizontal:0,
@@ -572,17 +631,6 @@ private calculateGlassesTransform(points: any) {
   // F. Position finale simplifiée pour mobile
   let finalPosition: THREE.Vector3;
   let dynamicAlpha: number;
-  
-  if (settings.priorityMode) {
-    // Version simplifiée ultra-rapide pour mobile
-    dynamicAlpha = 0.6; // Valeur fixe pour éviter les calculs
-    finalPosition = new THREE.Vector3(
-      eyeCenter.x * dynamicAlpha + nosePosition.x * (1 - dynamicAlpha) + this.glassesOffset.horizontal,
-      eyeCenter.y * dynamicAlpha + nosePosition.y * (1 - dynamicAlpha) + this.glassesOffset.vertical,
-      (eyeCenter.z * dynamicAlpha + nosePosition.z * (1 - dynamicAlpha)) + this.glassesOffset.depth - 8
-    );
-  } else {
-    // Version complète pour desktop
     const faceOrientation = this.calculateFaceOrientation(points, smoothedRotations);
     const dynamicDepthAdjustment = this.calculateDynamicDepthAdjustment(smoothedRotations, faceOrientation);
     const orientationOffset = this.calculateOrientationOffset(smoothedRotations, faceOrientation);
@@ -598,11 +646,9 @@ private calculateGlassesTransform(points: any) {
       (eyeCenter.z * dynamicAlpha + nosePosition.z * (1 - dynamicAlpha)) + 
       this.glassesOffset.depth - dynamicDepthAdjustment + orientationOffset.z
     );
-  }
-  
   // G. Échelle optimisée
   const baseScale = this.calculateOptimalScale(points);
-  const perspectiveScale = settings.priorityMode ? 1.0 : this.calculatePerspectiveScale(smoothedRotations, this.calculateFaceOrientation(points, smoothedRotations));
+  const perspectiveScale = settings.priorityMode ? 1.0 : this.calculatePerspectiveScale(smoothedRotations);
   const adjustedScale = baseScale * perspectiveScale;
   
   return {
@@ -668,7 +714,7 @@ private calculateDynamicAlpha(rotations: any) {
   return Math.min(0.8, baseAlpha + adjustment); // Alpha entre 0.5 et 0.8
 }
 
-private calculatePerspectiveScale(rotations: any, faceOrientation: any) {
+private calculatePerspectiveScale(rotations: any) {
   // Ajustement d'échelle selon la perspective
   const frontFactor = Math.cos(rotations.y); // 1 quand de face, diminue sur les côtés
   const verticalFactor = Math.cos(rotations.x); // 1 quand droit, diminue si tête penchée
@@ -739,8 +785,6 @@ private extractGlassesPoints(landmarks: any[], videoWidth: number, videoHeight: 
   
   const getPoint = (index: number) => 
     this.convertLandmarkToThreeJS(landmarks[index], realVideoWidth, realVideoHeight);
-  
-  // ... reste de votre code existant ...
   const points: any = {
     leftEye: getPoint(this.FACE_LANDMARKS.leftEyeCenter),
     rightEye: getPoint(this.FACE_LANDMARKS.rightEyeCenter),
@@ -1038,7 +1082,6 @@ this.scene3D.add(this.glasses3D);
       }
     );
   }
-// 11. Modifiez initThreeJS pour être plus flexible
 private initThreeJS() {
   if (this.threeInitialized) return;
   
@@ -1067,8 +1110,12 @@ private initThreeJS() {
   this.renderer3D.setSize(videoWidth, videoHeight);
   this.renderer3D.domElement.style.width = displayWidth + 'px';
   this.renderer3D.domElement.style.height = displayHeight + 'px';
-  
   this.threeContainer.nativeElement.appendChild(this.renderer3D.domElement);
+  if (this.isMobile()) {
+    this.renderer3D.setPixelRatio(1);
+  } else {
+    this.renderer3D.setPixelRatio(window.devicePixelRatio);
+  }
   console.log('Three.js initialisé avec dimensions:', { videoWidth, videoHeight, displayWidth, displayHeight });
   
   if (this.glass) {

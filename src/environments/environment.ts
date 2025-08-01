@@ -1,6 +1,6 @@
 // https://www.builder.io/c/docs/using-your-api-key
 export const environment = {
-  apiUrl : "http://localhost:8080/api",
+  apiUrl : "http://192.168.142.123:8080/api",
   production: false,
   builderApiKey: "770426d87b0444499ccfdd230f80c374",
 };
